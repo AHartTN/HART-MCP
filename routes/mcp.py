@@ -7,7 +7,8 @@ from fastapi.responses import JSONResponse
 from db_connectors import get_sql_server_connection
 from models import MCPSchema, MCPSchemaResponse
 from plugins import call_plugin
-from plugins_folder.tools import ToolRegistry, RAGTool, TreeOfThoughtTool
+from plugins_folder.tools import ToolRegistry, RAGTool, TreeOfThoughtTool, FinishTool # Import FinishTool
+from llm_connector import LLMClient # Import LLMClient
 
 mcp_router = APIRouter()
 
@@ -51,10 +52,14 @@ async def mcp(validated_data: MCPSchema):
         tool_registry = ToolRegistry()
         tool_registry.register_tool(RAGTool())
         tool_registry.register_tool(TreeOfThoughtTool())
+        tool_registry.register_tool(FinishTool()) # Register FinishTool
 
-        # Call the create_agent plugin to get a fresh agent instance, passing the tool_registry.
+        # Instantiate the new LLMClient
+        llm_client = LLMClient()
+
+        # Call the create_agent plugin to get a fresh agent instance, passing the tool_registry and llm_client.
         agent = await call_plugin(
-            "create_agent", agent_id, f"Agent_{agent_id}", "Task Planner", tool_registry
+            "create_agent", agent_id, f"Agent_{agent_id}", "Task Planner", tool_registry, llm_client
         )
         if not agent:
             return JSONResponse(

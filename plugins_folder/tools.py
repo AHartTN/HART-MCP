@@ -86,3 +86,23 @@ class TreeOfThoughtTool(BaseTool):
         root_thought.children.extend([child1, child2])
 
         return root_thought
+
+
+class FinishTool(BaseTool):
+    @property
+    def name(self) -> str:
+        return "FinishTool"
+
+    async def execute(self, query: str):
+        logger.info(f"FinishTool executing with query: {query}")
+        return query
+
+
+class FinishTool(BaseTool):
+    @property
+    def name(self) -> str:
+        return "FinishTool"
+
+    async def execute(self, query: str):
+        logger.info(f"FinishTool executing with query: {query}")
+        return query

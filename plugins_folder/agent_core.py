@@ -5,6 +5,7 @@ import logging
 from typing import Dict, List
 
 from utils import sql_connection_context
+from llm_connector import LLMClient # Import the new LLMClient
 
 
 def get_utc_timestamp():
@@ -15,12 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 class Agent:
-    def __init__(self, agent_id: int, name: str, role: str, tool_registry):
+    def __init__(self, agent_id: int, name: str, role: str, tool_registry, llm_client: LLMClient):
         self.agent_id = agent_id
         self.name = name
         self.role = role
         self.bdi_state = {"beliefs": {}, "desires": [], "intentions": []}
         self.tool_registry = tool_registry
+        self.scratchpad = []  # Initialize scratchpad as an empty list
+        self.llm = llm_client  # Store the LLMClient instance
 
     async def update_bdi_state(
         self,
@@ -67,79 +70,74 @@ class Agent:
 
     async def run(self, mission_prompt: str, log_id: int) -> dict:
         logger.info(f"Agent {self.name} starting mission: {mission_prompt}")
-        scratchpad = []
+        self.scratchpad = [f"Mission: {mission_prompt}"] # Initialize scratchpad as a list
         final_answer = None
 
-        # Fleshed out LLM for tool selection and reasoning
-        async def simulate_llm_reasoning(current_mission, available_tools, scratchpad_content):
-            reasoning = ""
-            tool_to_use = ""
-            query_for_tool = ""
-            final_answer = ""
-
-            # Step 1: Analyze current state based on scratchpad
-            if not scratchpad_content:
-                reasoning = f"The mission '{current_mission}' has just started. I need to generate a high-level plan to address it. The 'Tree of Thought Tool' is suitable for this purpose."
-                tool_to_use = "Tree of Thought Tool"
-                query_for_tool = current_mission
-            elif "Root thought for:" in scratchpad_content and "Detailed RAG response for" not in scratchpad_content:
-                reasoning = "A high-level plan (Tree of Thought) has been generated. Now I need to gather detailed information related to this plan using the 'RAG Tool'."
-                # Extract the plan from the scratchpad
-                plan_line = next((line for line in scratchpad_content.split('\n') if "Root thought for:" in line), "")
-                plan_query = plan_line.replace("Tool Result (Tree of Thought Tool): ", "").replace("Root thought for: ", "").strip()
-                query_for_tool = plan_query
-                tool_to_use = "RAG Tool"
-            elif "Detailed RAG response for" in scratchpad_content:
-                reasoning = "I have gathered detailed information using the RAG Tool. I should now be able to formulate a final answer based on the mission and the retrieved data."
-                final_answer = f"Mission '{current_mission}' completed. Final answer based on RAG data: {scratchpad_content}"
-            else:
-                reasoning = "Current state is unclear or requires further analysis. I will try to use the RAG tool to get more information."
-                tool_to_use = "RAG Tool"
-                query_for_tool = current_mission # Fallback
-
-            logger.info(f"LLM Reasoning: {reasoning}")
-
-            response_parts = []
-            if tool_to_use:
-                response_parts.append(f"Tool: {tool_to_use}")
-                response_parts.append(f"Query: {query_for_tool}")
-            if final_answer:
-                response_parts.append(f"Final Answer: {final_answer}")
-
-            return " | ".join(response_parts)
-
-        for step in range(5):  # Max 5 steps for the cognitive loop
-            scratchpad_content = "\n".join(scratchpad)
-            llm_response = await simulate_llm_reasoning(
-                mission_prompt, self.tool_registry._tools.values(), scratchpad_content
+        for step in range(10):  # Max 10 steps for the cognitive loop
+            # b. Reason: Construct a detailed system prompt.
+            persona = f"You are {self.name}, an AI agent with the role of {self.role}. Your goal is to accomplish the given mission by intelligently selecting and using the available tools. You must always respond with a JSON object containing a 'thought' and an 'action'. The 'action' must contain a 'tool' and a 'query'.\n"
+            available_tools = ", ".join(self.tool_registry.get_tool_names())
+            scratchpad_content = "\n".join(self.scratchpad)
+            
+            llm_prompt = (
+                f"{persona}"
+                f"Overall Mission: {mission_prompt}\n"
+                f"Available Tools: {available_tools}\n"
+                f"Scratchpad History:\n{scratchpad_content}\n"
+                "Your next response MUST be a JSON object with two keys: 'thought' (string) and 'action' (object). The 'action' object MUST have two keys: 'tool' (string, name of the tool to use) and 'query' (string, the input for the tool). If you have completed the mission, use the 'FinishTool' and provide the final answer as the query.\n"
+                "Example: {\"thought\": \"I need to use the RAG tool to get more information.\", \"action\": {\"tool\": \"RAG Tool\", \"query\": \"information about X\"}}"
             )
-            logger.info(f"LLM Response: {llm_response}")
+            logger.info(f"LLM Prompt for step {step}:\n{llm_prompt}")
 
-            if "Final Answer:" in llm_response:
-                final_answer = llm_response.split("Final Answer:", 1)[1].strip()
-                scratchpad.append(f"Final Answer: {final_answer}")
-                break
+            # c. Call self.llm.invoke(prompt) to get the agent's next thought and action.
+            llm_response_text = await self.llm.invoke(llm_prompt)
+            logger.info(f"LLM Raw Response: {llm_response_text}")
 
             try:
-                tool_part, query_part = llm_response.split(" | Query: ", 1)
-                tool_name = tool_part.replace("Tool: ", "").strip()
-                query_for_tool = query_part.strip()
+                llm_response = json.loads(llm_response_text)
+                thought = llm_response.get("thought")
+                action = llm_response.get("action")
 
-                # Act: Use the tool
-                tool_result = await self.tool_registry.use_tool(tool_name, query_for_tool)
-                logger.info(f"Tool '{tool_name}' executed. Result: {tool_result}")
+                if not thought or not action or "tool" not in action or "query" not in action:
+                    raise ValueError("LLM response is not in the expected JSON format or missing keys.")
 
-                # Observe: Append result to scratchpad
-                scratchpad.append(f"Tool Result ({tool_name}): {tool_result}")
+                tool_name = action["tool"]
+                query_for_tool = action["query"]
 
-                # Update BDI state (beliefs, desires, intentions can be updated based on tool results)
-                # For simplicity, we'll just update beliefs with the latest tool result
-                self.bdi_state["beliefs"].update({f"step_{step}_result": str(tool_result)})
-                await self.update_bdi_state(log_id, new_beliefs={f"step_{step}_result": str(tool_result)})
+                self.scratchpad.append(f"Thought: {thought}")
 
+                # e. Act: If the chosen tool is FinishTool, break the loop and return the result.
+                if tool_name == "FinishTool":
+                    final_answer = query_for_tool
+                    self.scratchpad.append(f"Final Answer: {final_answer}")
+                    break
+                else:
+                    logger.info(f"Attempting to use tool: {tool_name} with query: {query_for_tool}")
+                    tool_result = await self.tool_registry.use_tool(tool_name, query_for_tool)
+                    observation = f"Observation: Tool Result ({tool_name}): {tool_result}"
+                    logger.info(f"Tool '{tool_name}' executed. Result: {tool_result}")
+
+                    # f. Observe: Append the tool's output (the "observation") to the scratchpad.
+                    self.scratchpad.append(observation)
+
+                    # Update BDI state (beliefs, desires, intentions can be updated based on tool results)
+                    self.bdi_state["beliefs"].update({f"step_{step}_result": str(tool_result)})
+                    await self.update_bdi_state(log_id, new_beliefs={f"step_{step}_result": str(tool_result)})
+
+            except json.JSONDecodeError as e:
+                error_message = f"Error decoding JSON from LLM response: {e}. Response: {llm_response_text}"
+                self.scratchpad.append(f"Error: {error_message}")
+                logger.error(error_message)
+                break
             except ValueError as e:
-                scratchpad.append(f"Error parsing LLM response or using tool: {e}")
-                logger.error(f"Error in ReAct loop: {e}")
+                error_message = f"Error in ReAct loop (tool selection/execution): {e}"
+                self.scratchpad.append(f"Error: {error_message}")
+                logger.error(error_message)
+                break
+            except Exception as e:
+                error_message = f"An unexpected error occurred: {e}"
+                self.scratchpad.append(f"Error: {error_message}")
+                logger.error(error_message)
                 break
 
         if not final_answer:
@@ -153,8 +151,8 @@ class Agent:
         return {"final_response": final_answer}
 
 
-async def create_agent(agent_id: int, name: str, role: str, tool_registry) -> Agent:
+async def create_agent(agent_id: int, name: str, role: str, tool_registry, llm_client: LLMClient) -> Agent:
     """
     Creates and returns an Agent instance.
     """
-    return Agent(agent_id, name, role, tool_registry)
+    return Agent(agent_id, name, role, tool_registry, llm_client)
