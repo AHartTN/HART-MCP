@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Dict, List
+from typing import Dict, List, Callable, Optional
 
 from utils import sql_connection_context
 from llm_connector import LLMClient # Import the new LLMClient
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class Agent:
-    def __init__(self, agent_id: int, name: str, role: str, tool_registry, llm_client: LLMClient):
+    def __init__(self, agent_id: int, name: str, role: str, tool_registry, llm_client: LLMClient, update_callback: Optional[Callable] = None):
         self.agent_id = agent_id
         self.name = name
         self.role = role
@@ -26,9 +26,10 @@ class Agent:
         self.tool_registry = tool_registry
         self.scratchpad = []  # Initialize scratchpad as an empty list
         self.llm = llm_client  # Store the LLMClient instance
+        self.update_callback = update_callback # Store the update callback
 
     @classmethod
-    async def load_from_db(cls, agent_id: int, tool_registry, llm_client: LLMClient):
+    async def load_from_db(cls, agent_id: int, tool_registry, llm_client: LLMClient, update_callback: Optional[Callable] = None):
         async with sql_connection_context() as (sql_server_conn, cursor):
             if cursor is None:
                 raise RuntimeError("Failed to obtain database cursor for loading agent.")
@@ -41,7 +42,7 @@ class Agent:
             row = await asyncio.to_thread(cursor.fetchone)
             if row:
                 agent_id, name, role, bdi_state_json = row
-                agent = cls(agent_id, name, role, tool_registry, llm_client)
+                agent = cls(agent_id, name, role, tool_registry, llm_client, update_callback)
                 if bdi_state_json:
                     agent.bdi_state = json.loads(bdi_state_json)
                 return agent
@@ -91,10 +92,13 @@ class Agent:
                     exc,
                 )
 
-    async def run(self, mission_prompt: str, log_id: int) -> dict:
+    async def run(self, mission_prompt: str, log_id: int, update_callback: Optional[Callable] = None) -> dict:
         logger.info(f"Agent {self.name} starting mission: {mission_prompt}")
         self.scratchpad = [f"Mission: {mission_prompt}"] # Initialize scratchpad as a list
         final_answer = None
+
+        if self.update_callback:
+            await self.update_callback({"type": "mission_start", "content": mission_prompt})
 
         for step in range(10):  # Max 10 steps for the cognitive loop
             # b. Reason: Construct a detailed system prompt.
@@ -115,6 +119,9 @@ class Agent:
             )
             logger.info(f"LLM Prompt for step {step}:\n{llm_prompt}")
 
+            if self.update_callback:
+                await self.update_callback({"type": "thought_process", "content": f"Step {step}: Reasoning..."})
+
             # c. Call self.llm.invoke(prompt) to get the agent's next thought and action.
             llm_response_text = await self.llm.invoke(llm_prompt)
             logger.info(f"LLM Raw Response: {llm_response_text}")
@@ -131,20 +138,29 @@ class Agent:
                 query_for_tool = action["query"]
 
                 self.scratchpad.append(f"Thought: {thought}")
+                if self.update_callback:
+                    await self.update_callback({"type": "thought", "content": thought})
 
                 # e. Act: If the chosen tool is FinishTool, break the loop and return the result.
                 if tool_name == "FinishTool":
                     final_answer = query_for_tool
                     self.scratchpad.append(f"Final Answer: {final_answer}")
+                    if self.update_callback:
+                        await self.update_callback({"type": "final_answer", "content": final_answer})
                     break
                 else:
                     logger.info(f"Attempting to use tool: {tool_name} with query: {query_for_tool}")
+                    if self.update_callback:
+                        await self.update_callback({"type": "action", "content": {"tool": tool_name, "query": query_for_tool}})
+
                     tool_result = await self.tool_registry.use_tool(tool_name, query_for_tool)
                     observation = f"Observation: Tool Result ({tool_name}): {tool_result}"
                     logger.info(f"Tool '{tool_name}' executed. Result: {tool_result}")
 
                     # f. Observe: Append the tool's output (the "observation") to the scratchpad.
                     self.scratchpad.append(observation)
+                    if self.update_callback:
+                        await self.update_callback({"type": "observation", "content": observation})
 
                     # Update BDI state (beliefs, desires, intentions can be updated based on tool results)
                     self.bdi_state["beliefs"].update({f"step_{step}_result": str(tool_result)})
@@ -154,16 +170,22 @@ class Agent:
                 error_message = f"Error decoding JSON from LLM response: {e}. Response: {llm_response_text}"
                 self.scratchpad.append(f"Error: {error_message}")
                 logger.error(error_message)
+                if self.update_callback:
+                    await self.update_callback({"type": "error", "content": error_message})
                 break
             except ValueError as e:
                 error_message = f"Error in ReAct loop (tool selection/execution): {e}"
                 self.scratchpad.append(f"Error: {error_message}")
                 logger.error(error_message)
+                if self.update_callback:
+                    await self.update_callback({"type": "error", "content": error_message})
                 break
             except Exception as e:
                 error_message = f"An unexpected error occurred: {e}"
                 self.scratchpad.append(f"Error: {error_message}")
                 logger.error(error_message)
+                if self.update_callback:
+                    await self.update_callback({"type": "error", "content": error_message})
                 break
 
         if not final_answer:
