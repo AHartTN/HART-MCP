@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  mcp-server:
+    build: .
+    container_name: mcp-server
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"

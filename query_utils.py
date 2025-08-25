@@ -1,0 +1,86 @@
+from contextlib import contextmanager
+
+"""
+Centralized query and connection utilities for SQL Server, Neo4j, and Milvus.
+DRY/SOLID-compliant:
+"""
+# All query templates and connection/context managers in one place.
+
+# --- SQL Server Query Templates ---
+AGENTLOGS_SELECT_EVALUATION = "SELECT Evaluation FROM AgentLogs WHERE LogID = ?"
+AGENTLOGS_UPDATE_EVALUATION = "UPDATE AgentLogs SET Evaluation = ? WHERE LogID = ?"
+DOCUMENT_SELECT_LIKE = "SELECT * FROM Documents WHERE DocumentContent LIKE ?"
+AGENTLOG_INSERT = (
+    "INSERT INTO AgentLogs (AgentID, QueryContent, ThoughtTree) VALUES (?, ?, ?);"
+)
+AGENTLOG_UPDATE_THOUGHTTREE = "UPDATE AgentLogs SET ThoughtTree = ? WHERE LogID = ?"
+DOCUMENT_INSERT = (
+    "INSERT INTO Documents (DocumentID, Title, SourceURL, "
+    "DocumentContent) VALUES (?, ?, ?, ?)"
+)
+CHUNK_INSERT = (
+    "INSERT INTO Chunks (ChunkID, DocumentID, Text, Embedding, "
+    "ModelName, ModelVersion) VALUES (?, ?, ?, ?, ?, ?)"
+)
+CHANGELOG_SELECT = (
+    "SELECT ChangeID, SourceTable, SourceID, ChangeType, Payload "
+    "FROM ChangeLog WHERE ChangeID > ? ORDER BY ChangeID ASC"
+)
+
+# --- SQL Server Connection Context ---
+
+
+@contextmanager
+def sql_server_connection_context(conn):
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        yield conn, cursor
+    finally:
+        if cursor:
+            cursor.close()
+        conn.close()
+
+
+# --- Neo4j Query Templates ---
+SEARCH_NODES_CONTAINS_TEXT = """
+    MATCH (n)
+    WHERE toLower(n.text) CONTAINS toLower($query)
+    RETURN n.text AS text
+    LIMIT 5
+    """
+
+
+AGENT_MERGE = "MERGE (a:Agent {id: $agent_id})"
+AGENTLOG_MERGE = "MERGE (l:AgentLog {id: $log_id, agent_id: $agent_id})"
+AGENTLOG_DELETE = "MATCH (l:AgentLog {id: $log_id}) DETACH DELETE l"
+AGENT_DELETE = "MATCH (a:Agent {id: $agent_id}) DETACH DELETE a"
+DOCUMENT_MERGE = (
+    "MERGE (d:Document {id: $document_id, title: $title, source_url: $source_url})"
+)
+DOCUMENT_DELETE = "MATCH (d:Document {id: $document_id}) DETACH DELETE d"
+
+# --- Milvus Query Templates ---
+# Add Milvus search templates as needed
+
+
+# --- Generic Query Execution ---
+
+
+def execute_sql_query(
+    cursor,
+    query: str,
+    params: tuple = (),
+):
+    cursor.execute(query, params)
+    return cursor
+
+
+def execute_neo4j_query(driver, query: str, params: dict = None):
+    if params is None:
+        params = {}
+    with driver.session() as session:
+        return session.run(query, **params)
+
+
+# Add Milvus execution helpers as needed
