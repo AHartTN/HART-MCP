@@ -28,3 +28,4 @@ pytest-asyncio
 fastapi
 uvicorn[standard]
 pydantic
+aiofiles

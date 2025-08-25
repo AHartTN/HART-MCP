@@ -4,7 +4,7 @@ import os
 import traceback
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
-from functools import wraps
+
 from typing import List
 
 import PyPDF2
@@ -12,7 +12,7 @@ import pytesseract
 import speech_recognition as sr
 from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
-from marshmallow import ValidationError
+
 from PIL import Image
 
 from db_connectors import get_milvus_client, get_neo4j_driver, get_sql_server_connection
