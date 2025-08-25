@@ -45,7 +45,8 @@ async def mcp(validated_data: MCPSchema):
             log_id = await asyncio.to_thread(
                 getattr, cursor, "lastrowid", None
             )  # Blocking call in thread
-        except Exception:
+        except Exception as e:
+            print(f"Exception during database operations: {e}")
             return JSONResponse(
                 content={"error": "Failed to log agent."}, status_code=500
             )

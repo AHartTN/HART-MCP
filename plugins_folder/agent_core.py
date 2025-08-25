@@ -80,6 +80,34 @@ class Agent:
                     exc,
                 )
 
+    async def run(self, mission_prompt: str, log_id: int) -> dict:
+        logger.info(f"Agent {self.name} starting mission: {mission_prompt}")
+
+        # 1. Add mission_prompt to desires
+        self.bdi_state["desires"].append(mission_prompt)
+        await self.update_bdi_state(log_id, new_desires=[mission_prompt])
+
+        # 2. Generate high-level plan using ToT
+        # The initiate_tot method returns a Thought object, we need its text
+        root_thought = await self.initiate_tot(mission_prompt, log_id)
+        plan = root_thought.text if root_thought else "No plan generated."
+        logger.info(f"Agent {self.name} generated plan: {plan}")
+
+        # 3. Add plan to intentions
+        self.bdi_state["intentions"].append(plan)
+        await self.update_bdi_state(log_id, new_intentions=[plan])
+
+        # 4. Perform RAG query using the plan
+        final_result = await self.perform_rag_query(plan, log_id)
+        logger.info(f"Agent {self.name} received final result: {final_result}")
+
+        # 5. Update beliefs with the final result
+        self.bdi_state["beliefs"].update({"final_result": final_result})
+        await self.update_bdi_state(log_id, new_beliefs={"final_result": final_result})
+
+        logger.info(f"Agent {self.name} completed mission.")
+        return final_result
+
 
 async def create_agent(agent_id: int, name: str, role: str) -> Agent:
     """
