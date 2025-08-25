@@ -1,6 +1,8 @@
 import logging
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from routes.agent import agent_router
 from routes.feedback import feedback_router
@@ -15,6 +17,9 @@ app = FastAPI()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # Include routers
 app.include_router(agent_router)
 app.include_router(feedback_router)
@@ -23,6 +28,10 @@ app.include_router(ingest_router)
 app.include_router(mcp_router)
 app.include_router(retrieve_router)
 app.include_router(status_router)
+
+@app.get("/")
+async def read_root():
+    return FileResponse("static/index.html")
 
 if __name__ == "__main__":
     import uvicorn
