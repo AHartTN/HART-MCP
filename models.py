@@ -12,5 +12,13 @@ class MCPSchema(BaseModel):
     agent_id: int = 1
 
 
+class MCPSchemaResponse(BaseModel):
+    agent_id: int
+    query: str
+    log_id: int
+    status: str
+    result: Optional[dict] = None
+
+
 class RetrieveSchema(BaseModel):
     query: str

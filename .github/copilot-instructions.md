@@ -68,7 +68,7 @@ The HART-MCP is a multi-agent asynchronous AI platform built on FastAPI, designe
     -   **SQL Server**: Relational database for structured data. Connection details in `config.py` and `db_connectors.py`.
     -   **LLMs**: Integrated via the `transformers` library in `rag_pipeline.py` (e.g., `distilgpt2`).
     -   **Embedding Models**: Integrated via `sentence-transformers` in `rag_pipeline.py`.
-    -   **Azure Key Vault**: Placeholder integration in `utils.py` for secret management.
+    -   **Azure Key Vault**: Integrated for secret management in `utils.py`.
 
 ## Key Files & Directories
 

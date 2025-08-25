@@ -94,7 +94,7 @@ def get_secret_from_keyvault(
     vault_url = vault_url or os.getenv("AZURE_KEYVAULT_URL")
     if not vault_url:
         logger.error("Key Vault URL not set.")
-    raise NotImplementedError("Functionality not yet implemented.")
+        return None
     try:
         credential = DefaultAzureCredential()
         client = SecretClient(vault_url=vault_url, credential=credential)
