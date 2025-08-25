@@ -4,8 +4,8 @@ import json
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from models import MCPSchema
 from db_connectors import get_sql_server_connection
+from models import MCPSchema
 from plugins import call_plugin
 
 mcp_router = APIRouter()
@@ -47,8 +47,7 @@ async def mcp(validated_data: MCPSchema):
             )  # Blocking call in thread
         except Exception:
             return JSONResponse(
-                content={"error": "Failed to log agent."},
-                status_code=500
+                content={"error": "Failed to log agent."}, status_code=500
             )
         response = {
             "agent_id": agent_id,

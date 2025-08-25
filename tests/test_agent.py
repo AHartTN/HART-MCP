@@ -1,6 +1,7 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from server import app
 
@@ -85,12 +86,11 @@ async def test_agent_bdi_success():
         assert response.status_code == 200
         json_data = response.json()
         assert "message" in json_data
-                    mock_update_bdi_state.assert_awaited_once_with(
-                payload["log_id"],
-                payload["new_beliefs"],
-                payload["new_desires"],
-                payload["new_intentions"],
-            )
+        mock_update_bdi_state.assert_awaited_once_with(
+            payload["new_beliefs"],
+            payload["new_desires"],
+            payload["new_intentions"],
+        )
 
 
 @pytest.mark.asyncio

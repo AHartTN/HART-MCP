@@ -2,7 +2,8 @@ from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient  # Import TestClient from fastapi.testclient
+from fastapi.testclient import \
+    TestClient  # Import TestClient from fastapi.testclient
 
 from server import app  # Import the main FastAPI app
 from utils import chunk_text
@@ -82,7 +83,6 @@ def test_chunk_text_small_text_large_chunk_size():
 async def test_ingest_document_success(client, mock_ingest_dependencies):  # Make async
     mock_conn = mock_ingest_dependencies["mock_conn"]
     mock_cursor = mock_ingest_dependencies["mock_cursor"]
-    
 
     # Mock the async methods of the cursor and connection
     mock_cursor.execute.return_value = None  # Mock execute to return None

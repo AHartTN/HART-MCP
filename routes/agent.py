@@ -5,15 +5,18 @@ from pydantic import BaseModel
 from plugins_folder.agent_core import Agent  # Import the Agent class
 from utils import logger
 
+
 class AgentReflexionRequest(BaseModel):
     query: str
     agent_id: int = 1
     log_id: int = 1
 
+
 class AgentTreeOfThoughtRequest(BaseModel):
     agent_id: int
     log_id: int
     query: str
+
 
 class AgentBDIRequest(BaseModel):
     agent_id: int
@@ -21,6 +24,7 @@ class AgentBDIRequest(BaseModel):
     new_beliefs: dict = {}
     new_desires: dict = {}
     new_intentions: dict = {}
+
 
 agent_router = APIRouter()
 
@@ -47,7 +51,9 @@ async def agent_tree_of_thought_route(request_body: AgentTreeOfThoughtRequest):
     try:
         from tree_of_thought import initiate_tree_of_thought
 
-        root_thought = await initiate_tree_of_thought(request_body.query, request_body.agent_id)
+        root_thought = await initiate_tree_of_thought(
+            request_body.query, request_body.agent_id
+        )
         if not root_thought:
             return JSONResponse(
                 content={"error": "Failed to generate tree of thought."},

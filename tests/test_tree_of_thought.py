@@ -3,14 +3,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tree_of_thought import (
-    Thought,
-    expand_thought_tree,
-    initiate_tree_of_thought,
-    prune_tree,
-    select_best_thought,
-    update_agent_log_thought_tree,
-)
+from tree_of_thought import (Thought, expand_thought_tree,
+                             initiate_tree_of_thought, prune_tree,
+                             select_best_thought,
+                             update_agent_log_thought_tree)
 
 
 # Mock db_connectors.get_sql_server_connection

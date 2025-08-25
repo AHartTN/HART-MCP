@@ -8,21 +8,11 @@ import pyodbc
 from neo4j import Driver, GraphDatabase
 from pymilvus import MilvusClient, MilvusException
 
-from config import (
-    MILVUS_HOST,
-    MILVUS_PASSWORD,
-    MILVUS_PORT,
-    MILVUS_USER,
-    NEO4J_PASSWORD,
-    NEO4J_URI,
-    NEO4J_USER,
-    SQL_SERVER_CONNECTION_STRING,
-)
-from query_utils import (
-    AGENTLOGS_SELECT_EVALUATION,
-    AGENTLOGS_UPDATE_EVALUATION,
-    execute_sql_query,
-)
+from config import (MILVUS_HOST, MILVUS_PASSWORD, MILVUS_PORT, MILVUS_USER,
+                    NEO4J_PASSWORD, NEO4J_URI, NEO4J_USER,
+                    SQL_SERVER_CONNECTION_STRING)
+from query_utils import (AGENTLOGS_SELECT_EVALUATION,
+                         AGENTLOGS_UPDATE_EVALUATION, execute_sql_query)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
