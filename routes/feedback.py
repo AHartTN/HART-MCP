@@ -1,20 +1,17 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from models import FeedbackSchema
 from utils import logger
 
 feedback_router = APIRouter()
 
 
 @feedback_router.post("/feedback")
-async def feedback_route(request: Request):
+async def feedback_route(feedback: FeedbackSchema):
     try:
-        data = await request.json()
-        if not data.get("log_id") or not data.get("feedback_text"):
-            return JSONResponse(
-                content={"error": "Validation error: Missing log_id or feedback_text"},
-                status_code=400,
-            )
+        log_id = feedback.log_id
+        feedback_text = feedback.feedback_text
 
         # ...existing code...
         return JSONResponse(content={"message": "Feedback received"}, status_code=200)

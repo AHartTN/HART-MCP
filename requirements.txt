@@ -2,11 +2,9 @@ pyjwt
 requests
 msal
 python-dotenv
-flask
 pyodbc
 pymilvus
 neo4j
-flasgger
 transformers
 torch
 librosa
@@ -23,8 +21,10 @@ black
 isort
 ruff
 opencensus-ext-azure
-opencensus-ext-flask
 azure-keyvault-secrets
 aioodbc
 gunicorn
 pytest-asyncio
+fastapi
+uvicorn[standard]
+pydantic

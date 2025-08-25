@@ -12,7 +12,6 @@ import pytesseract
 import speech_recognition as sr
 from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
-from flask import jsonify, request
 from marshmallow import ValidationError
 from PIL import Image
 
@@ -87,33 +86,6 @@ async def milvus_connection_context():
                 await asyncio.to_thread(client.close)
             except Exception as e:
                 logger.error("Error closing Milvus client: %s", e)
-
-
-def error_response(message: str, status_code: int) -> tuple:
-    """Generates a consistent JSON error response."""
-    return jsonify({"error": message}), status_code
-
-
-def json_required(schema_class):
-    """
-    Decorator to validate incoming JSON requests using a Marshmallow schema.
-    """
-
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            data = request.get_json()
-            if not data:
-                return error_response("Bad request: no JSON payload", 400)
-            try:
-                validated_data = schema_class().load(data)
-            except ValidationError as ve:
-                return error_response(f"Validation error: {ve.messages}", 400)
-            return f(validated_data, *args, **kwargs)
-
-        return decorated_function
-
-    return decorator
 
 
 def get_secret_from_keyvault(

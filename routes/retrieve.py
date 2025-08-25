@@ -1,28 +1,16 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
+from models import RetrieveSchema
 from rag_pipeline import get_embedding, search_milvus
 from utils import logger, milvus_connection_context
 
 retrieve_router = APIRouter()
 
 
-class RetrieveSchema(BaseModel):
-    query: str
-
-
 @retrieve_router.post("/retrieve")
-async def retrieve(request: Request):
+async def retrieve(validated_data: RetrieveSchema):
     try:
-        data = await request.json()
-        if not data:
-            logger.error("Bad request: no JSON payload")
-            return JSONResponse(
-                content={"error": "Bad request: no JSON payload"}, status_code=400
-            )
-
-        validated_data = RetrieveSchema(**data)
         query = validated_data.query
 
         query_embedding = await get_embedding(query)
