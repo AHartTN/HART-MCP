@@ -6,6 +6,8 @@ from typing import Dict, List
 
 from utils import sql_connection_context
 from llm_connector import LLMClient # Import the new LLMClient
+from prompts import AGENT_CONSTITUTION
+from plugins_folder.tools import ToolRegistry # Assuming ToolRegistry is in plugins_folder/tools.py
 
 
 def get_utc_timestamp():
@@ -24,6 +26,27 @@ class Agent:
         self.tool_registry = tool_registry
         self.scratchpad = []  # Initialize scratchpad as an empty list
         self.llm = llm_client  # Store the LLMClient instance
+
+    @classmethod
+    async def load_from_db(cls, agent_id: int, tool_registry, llm_client: LLMClient):
+        async with sql_connection_context() as (sql_server_conn, cursor):
+            if cursor is None:
+                raise RuntimeError("Failed to obtain database cursor for loading agent.")
+            
+            await asyncio.to_thread(
+                cursor.execute,
+                "SELECT AgentID, Name, Role, BDIState FROM Agents WHERE AgentID = ?",
+                agent_id,
+            )
+            row = await asyncio.to_thread(cursor.fetchone)
+            if row:
+                agent_id, name, role, bdi_state_json = row
+                agent = cls(agent_id, name, role, tool_registry, llm_client)
+                if bdi_state_json:
+                    agent.bdi_state = json.loads(bdi_state_json)
+                return agent
+            else:
+                return None
 
     async def update_bdi_state(
         self,
@@ -75,12 +98,15 @@ class Agent:
 
         for step in range(10):  # Max 10 steps for the cognitive loop
             # b. Reason: Construct a detailed system prompt.
-            persona = f"You are {self.name}, an AI agent with the role of {self.role}. Your goal is to accomplish the given mission by intelligently selecting and using the available tools. You must always respond with a JSON object containing a 'thought' and an 'action'. The 'action' must contain a 'tool' and a 'query'.\n"
+            system_prompt = AGENT_CONSTITUTION
+            # Add agent-specific persona to the system prompt
+            persona_details = f"You are {self.name}, an AI agent with the role of {self.role}.\n"
+            system_prompt = persona_details + system_prompt
             available_tools = ", ".join(self.tool_registry.get_tool_names())
             scratchpad_content = "\n".join(self.scratchpad)
             
             llm_prompt = (
-                f"{persona}"
+                f"{system_prompt}"
                 f"Overall Mission: {mission_prompt}\n"
                 f"Available Tools: {available_tools}\n"
                 f"Scratchpad History:\n{scratchpad_content}\n"
@@ -142,6 +168,15 @@ class Agent:
 
         if not final_answer:
             final_answer = "No final answer generated within the given steps." # Fallback
+
+        # Reflect on the scratchpad and update beliefs
+        summary_prompt = f"Please summarize the following mission scratchpad, focusing on key actions, observations, and outcomes. This summary will be used to update the agent's long-term beliefs.\n\nScratchpad:\n{\"\n\".join(self.scratchpad)}"
+        mission_summary = await self.llm.invoke(summary_prompt)
+        logger.info(f"Mission Summary for BDI update: {mission_summary}")
+
+        # Update BDI state with the mission summary
+        self.bdi_state["beliefs"].update({"last_mission_summary": mission_summary})
+        await self.update_bdi_state(log_id, new_beliefs={"last_mission_summary": mission_summary})
 
         # Final update of BDI state with the overall outcome
         self.bdi_state["beliefs"].update({"final_mission_outcome": final_answer})

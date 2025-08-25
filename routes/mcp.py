@@ -9,6 +9,7 @@ from models import MCPSchema, MCPSchemaResponse
 from plugins import call_plugin
 from plugins_folder.tools import ToolRegistry, RAGTool, TreeOfThoughtTool, FinishTool # Import FinishTool
 from llm_connector import LLMClient # Import LLMClient
+from plugins_folder.agent_core import Agent # Import Agent
 
 mcp_router = APIRouter()
 
@@ -57,14 +58,19 @@ async def mcp(validated_data: MCPSchema):
         # Instantiate the new LLMClient
         llm_client = LLMClient()
 
-        # Call the create_agent plugin to get a fresh agent instance, passing the tool_registry and llm_client.
-        agent = await call_plugin(
-            "create_agent", agent_id, f"Agent_{agent_id}", "Task Planner", tool_registry, llm_client
-        )
+        # Load agent from DB or create a new one if not found
+        agent = await Agent.load_from_db(agent_id, tool_registry, llm_client)
         if not agent:
-            return JSONResponse(
-                content={"error": "Failed to create agent."}, status_code=500
+            # If agent not found, create a new one with default values
+            # This part can be adjusted based on whether you want to strictly load or create if not exists
+            agent = await call_plugin(
+                "create_agent", agent_id, f"Agent_{agent_id}", "Task Planner", tool_registry, llm_client
             )
+            if not agent:
+                return JSONResponse(
+                    content={"error": "Failed to create agent."},
+                    status_code=500,
+                )
 
         # Call the agent's new run method, passing it the mission prompt and the log_id.
         final_result = await agent.run(query, log_id)
