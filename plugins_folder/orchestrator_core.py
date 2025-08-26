@@ -4,11 +4,12 @@ import json
 import logging
 from typing import Callable, Dict, List, Optional
 
-from llm_connector import LLMClient  # Import the new LLMClient
+from llm_connector import LLMClient
 from plugins_folder.tools import (
+    BaseTool,  # Import BaseTool for type hinting
     ToolRegistry,
-)  # Assuming ToolRegistry is in plugins_folder/tools.py
-from prompts import AGENT_CONSTITUTION
+)
+from prompts import AGENT_CONSTITUTION  # Orchestrator will also use a constitution
 from utils import sql_connection_context
 
 
@@ -19,13 +20,13 @@ def get_utc_timestamp():
 logger = logging.getLogger(__name__)
 
 
-class SpecialistAgent:
+class OrchestratorAgent:
     def __init__(
         self,
         agent_id: int,
         name: str,
         role: str,
-        tool_registry,
+        tool_registry: ToolRegistry,
         llm_client: LLMClient,
         update_callback: Optional[Callable] = None,
     ):
@@ -34,15 +35,15 @@ class SpecialistAgent:
         self.role = role
         self.bdi_state = {"beliefs": {}, "desires": [], "intentions": []}
         self.tool_registry = tool_registry
-        self.scratchpad = []  # Initialize scratchpad as an empty list
-        self.llm = llm_client  # Store the LLMClient instance
-        self.update_callback = update_callback  # Store the update callback
+        self.scratchpad = []
+        self.llm = llm_client
+        self.update_callback = update_callback
 
     @classmethod
     async def load_from_db(
         cls,
         agent_id: int,
-        tool_registry,
+        tool_registry: ToolRegistry,
         llm_client: LLMClient,
         update_callback: Optional[Callable] = None,
     ):
@@ -118,24 +119,18 @@ class SpecialistAgent:
         log_id: int,
         update_callback: Optional[Callable] = None,
     ) -> dict:
-        logger.info(f"Agent {self.name} starting mission: {mission_prompt}")
-        self.scratchpad = [
-            f"Mission: {mission_prompt}"
-        ]  # Initialize scratchpad as a list
+        logger.info(f"OrchestratorAgent {self.name} starting mission: {mission_prompt}")
+        self.scratchpad = [f"Mission: {mission_prompt}"]
         final_answer = None
 
         if self.update_callback:
             await self.update_callback(
-                {"type": "mission_start", "content": mission_prompt}
+                {"type": "orchestrator_mission_start", "content": mission_prompt}
             )
 
         for step in range(10):  # Max 10 steps for the cognitive loop
-            # b. Reason: Construct a detailed system prompt.
             system_prompt = AGENT_CONSTITUTION
-            # Add agent-specific persona to the system prompt
-            persona_details = (
-                f"You are {self.name}, an AI agent with the role of {self.role}.\n"
-            )
+            persona_details = f"You are {self.name}, an AI orchestrator agent with the role of {self.role}. Your primary goal is to break down complex missions and delegate sub-tasks to specialist agents using the available tools. You must always respond with a JSON object containing a 'thought' and an 'action'. The 'action' must contain a 'tool' and a 'query'.\n"
             system_prompt = persona_details + system_prompt
             available_tools = ", ".join(self.tool_registry.get_tool_names())
             scratchpad_content = "\n".join(self.scratchpad)
@@ -146,16 +141,18 @@ class SpecialistAgent:
                 f"Available Tools: {available_tools}\n"
                 f"Scratchpad History:\n{scratchpad_content}\n"
                 "Your next response MUST be a JSON object with two keys: 'thought' (string) and 'action' (object). The 'action' object MUST have two keys: 'tool' (string, name of the tool to use) and 'query' (string, the input for the tool). If you have completed the mission, use the 'FinishTool' and provide the final answer as the query.\n"
-                'Example: {"thought": "I need to use the RAG tool to get more information.", "action": {"tool": "RAG Tool", "query": "information about X"}}'
+                'Example: {"thought": "I need to delegate this task to a specialist.", "action": {"tool": "DelegateToSpecialistTool", "query": "sub-task for specialist"}}'
             )
             logger.info(f"LLM Prompt for step {step}:\n{llm_prompt}")
 
             if self.update_callback:
                 await self.update_callback(
-                    {"type": "thought_process", "content": f"Step {step}: Reasoning..."}
+                    {
+                        "type": "orchestrator_thought_process",
+                        "content": f"Step {step}: Reasoning...",
+                    }
                 )
 
-            # c. Call self.llm.invoke(prompt) to get the agent's next thought and action.
             llm_response_text = await self.llm.invoke(llm_prompt)
             logger.info(f"LLM Raw Response: {llm_response_text}")
 
@@ -179,15 +176,19 @@ class SpecialistAgent:
 
                 self.scratchpad.append(f"Thought: {thought}")
                 if self.update_callback:
-                    await self.update_callback({"type": "thought", "content": thought})
+                    await self.update_callback(
+                        {"type": "orchestrator_thought", "content": thought}
+                    )
 
-                # e. Act: If the chosen tool is FinishTool, break the loop and return the result.
                 if tool_name == "FinishTool":
                     final_answer = query_for_tool
                     self.scratchpad.append(f"Final Answer: {final_answer}")
                     if self.update_callback:
                         await self.update_callback(
-                            {"type": "final_answer", "content": final_answer}
+                            {
+                                "type": "orchestrator_final_answer",
+                                "content": final_answer,
+                            }
                         )
                     break
                 else:
@@ -197,7 +198,7 @@ class SpecialistAgent:
                     if self.update_callback:
                         await self.update_callback(
                             {
-                                "type": "action",
+                                "type": "orchestrator_action",
                                 "content": {"tool": tool_name, "query": query_for_tool},
                             }
                         )
@@ -210,14 +211,12 @@ class SpecialistAgent:
                     )
                     logger.info(f"Tool '{tool_name}' executed. Result: {tool_result}")
 
-                    # f. Observe: Append the tool's output (the "observation") to the scratchpad.
                     self.scratchpad.append(observation)
                     if self.update_callback:
                         await self.update_callback(
-                            {"type": "observation", "content": observation}
+                            {"type": "orchestrator_observation", "content": observation}
                         )
 
-                    # Update BDI state (beliefs, desires, intentions can be updated based on tool results)
                     self.bdi_state["beliefs"].update(
                         {f"step_{step}_result": str(tool_result)}
                     )
@@ -231,7 +230,7 @@ class SpecialistAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "error", "content": error_message}
+                        {"type": "orchestrator_error", "content": error_message}
                     )
                 break
             except ValueError as e:
@@ -240,7 +239,7 @@ class SpecialistAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "error", "content": error_message}
+                        {"type": "orchestrator_error", "content": error_message}
                     )
                 break
             except Exception as e:
@@ -249,7 +248,7 @@ class SpecialistAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "error", "content": error_message}
+                        {"type": "orchestrator_error", "content": error_message}
                     )
                 break
 
@@ -258,40 +257,45 @@ class SpecialistAgent:
                 "No final answer generated within the given steps."  # Fallback
             )
 
-        # Reflect on the scratchpad and update beliefs
-        summary_prompt = f"Please summarize the following mission scratchpad, focusing on key actions, observations, and outcomes. This summary will be used to update the agent's long-term beliefs.\n\nScratchpad:\nscratchpad_content_for_summary"
-        mission_summary = await self.llm.invoke(summary_prompt)
-        logger.info(f"Mission Summary for BDI update: {mission_summary}")
+        scratchpad_text = "\n".join(self.scratchpad)
+        summary_prompt = f"""Please summarize the following orchestrator mission scratchpad, focusing on key actions, observations, and outcomes. This summary will be used to update the orchestrator agent's long-term beliefs.
 
-        # Update BDI state with the mission summary
-        self.bdi_state["beliefs"].update({"last_mission_summary": mission_summary})
+Scratchpad:
+{scratchpad_text}"""
+        mission_summary = await self.llm.invoke(summary_prompt)
+        logger.info(f"Orchestrator Mission Summary for BDI update: {mission_summary}")
+
+        self.bdi_state["beliefs"].update(
+            {"last_orchestrator_mission_summary": mission_summary}
+        )
         await self.update_bdi_state(
-            log_id, new_beliefs={"last_mission_summary": mission_summary}
+            log_id, new_beliefs={"last_orchestrator_mission_summary": mission_summary}
         )
 
-        # Final update of BDI state with the overall outcome
-        self.bdi_state["beliefs"].update({"final_mission_outcome": final_answer})
+        self.bdi_state["beliefs"].update(
+            {"final_orchestrator_mission_outcome": final_answer}
+        )
         await self.update_bdi_state(
-            log_id, new_beliefs={"final_mission_outcome": final_answer}
+            log_id, new_beliefs={"final_orchestrator_mission_outcome": final_answer}
         )
 
         logger.info(
-            f"Agent {self.name} completed mission with final answer: {final_answer}"
+            f"OrchestratorAgent {self.name} completed mission with final answer: {final_answer}"
         )
         return {"final_response": final_answer}
 
 
-async def create_specialist_agent(
+async def create_orchestrator_agent(
     agent_id: int,
     name: str,
     role: str,
-    tool_registry,
+    tool_registry: ToolRegistry,
     llm_client: LLMClient,
     update_callback: Optional[Callable] = None,
-) -> SpecialistAgent:
+) -> OrchestratorAgent:
     """
-    Creates and returns an Agent instance.
+    Creates and returns an OrchestratorAgent instance.
     """
-    return SpecialistAgent(
+    return OrchestratorAgent(
         agent_id, name, role, tool_registry, llm_client, update_callback
     )

@@ -1,131 +1,173 @@
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 # Add plugins_folder to sys.path for importlib to find it
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# Import the plugins module after modifying sys.path
-from plugins import list_plugins  # Added list_plugins
-from plugins import call_plugin, load_plugins, register_plugin
+from llm_connector import LLMClient
+from plugins import call_plugin, list_plugins, load_plugins, register_plugin
+from plugins_folder.agent_core import SpecialistAgent, create_specialist_agent
+from plugins_folder.orchestrator_core import (
+    OrchestratorAgent,
+    create_orchestrator_agent,
+)
+from plugins_folder.tools import (
+    DelegateToSpecialistTool,
+    FinishTool,
+    RAGTool,
+    ToolRegistry,
+    TreeOfThoughtTool,
+)
 
 
-# Mock the agent_core module and its register function
 @pytest.fixture
-def mock_agent_core_module():
-    mock_agent_core = MagicMock()
-    mock_agent_core.Agent = MagicMock()
-    mock_agent_core.Agent.return_value = MagicMock(bdi_state={})
-    mock_agent_core.Agent.return_value.update_bdi_state = MagicMock()
-    mock_agent_core.Agent.return_value.perform_rag_query = MagicMock(
-        return_value={"final_response": "mocked rag response"}
-    )
-    mock_agent_core.Agent.return_value.initiate_tot = MagicMock(
-        return_value=MagicMock(to_dict=lambda: {"text": "mocked tot"})
-    )
+def mock_llm_client():
+    return AsyncMock(spec=LLMClient)
 
-    # Mock the register function within the agent_core module
-    def mock_register(plugins_dict):
-        plugins_dict["create_agent"] = mock_agent_core.create_agent_plugin
-        plugins_dict["agent_perform_rag_query"] = (
-            mock_agent_core.agent_perform_rag_query_plugin
+
+@pytest.fixture
+def mock_tool_registry():
+    registry = MagicMock(spec=ToolRegistry)
+    registry.get_tool_names.return_value = [
+        "RAG Tool",
+        "Tree of Thought Tool",
+        "FinishTool",
+        "DelegateToSpecialistTool",
+    ]
+
+    mock_rag_tool = AsyncMock(spec=RAGTool)
+    mock_rag_tool.name = "RAG Tool"
+    mock_rag_tool.execute.return_value = {"response": "mocked RAG result"}
+    registry.register_tool(mock_rag_tool)
+
+    mock_tot_tool = AsyncMock(spec=TreeOfThoughtTool)
+    mock_tot_tool.name = "Tree of Thought Tool"
+    mock_tot_tool.execute.return_value = {"response": "mocked ToT result"}
+    registry.register_tool(mock_tot_tool)
+
+    mock_finish_tool = AsyncMock(spec=FinishTool)
+    mock_finish_tool.name = "FinishTool"
+    mock_finish_tool.execute.return_value = "mocked final answer"
+    registry.register_tool(mock_finish_tool)
+
+    # Mock use_tool to return specific results for known tools
+    registry.use_tool.side_effect = lambda name, query: {
+        "RAG Tool": mock_rag_tool.execute(query),
+        "Tree of Thought Tool": mock_tot_tool.execute(query),
+        "FinishTool": mock_finish_tool.execute(query),
+        "DelegateToSpecialistTool": AsyncMock(
+            return_value={"delegated_result": "mocked delegation"}
+        ).execute(
+            query
+        ),  # Mock for delegate tool
+    }[name]
+    return registry
+
+
+@pytest.fixture
+def mock_specialist_agent_instance():
+    mock_agent = AsyncMock(spec=SpecialistAgent)
+    mock_agent.run.return_value = {"final_response": "Specialist completed sub-task."}
+    mock_agent.update_callback = AsyncMock()
+    return mock_agent
+
+
+@pytest.fixture
+def mock_orchestrator_agent_instance():
+    mock_agent = AsyncMock(spec=OrchestratorAgent)
+    mock_agent.run.return_value = {"final_response": "Orchestrator completed mission."}
+    mock_agent.update_callback = AsyncMock()
+    return mock_agent
+
+
+# --- Tests for ToolRegistry ---
+@pytest.mark.asyncio
+async def test_tool_registry_register_and_use(mock_tool_registry):
+    # The fixture already registers tools and mocks use_tool
+    result = await mock_tool_registry.use_tool("RAG Tool", "test query")
+    assert result == {"response": "mocked RAG result"}
+    mock_tool_registry.get_tool_names.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_tool_registry_tool_not_found(mock_tool_registry):
+    with pytest.raises(ValueError, match="Tool 'NonExistentTool' not found."):
+        await mock_tool_registry.use_tool("NonExistentTool", "query")
+
+
+# --- Tests for DelegateToSpecialistTool ---
+@pytest.mark.asyncio
+async def test_delegate_to_specialist_tool_execute(mock_specialist_agent_instance):
+    delegate_tool = DelegateToSpecialistTool(
+        specialist_agent=mock_specialist_agent_instance
+    )
+    mission_prompt = "Perform a specific sub-task."
+
+    result = await delegate_tool.execute(mission_prompt)
+
+    mock_specialist_agent_instance.run.assert_awaited_once_with(
+        mission_prompt,
+        log_id=1,  # Default log_id from the tool's implementation
+        update_callback=mock_specialist_agent_instance.update_callback,
+    )
+    assert result == {"final_response": "Specialist completed sub-task."}
+
+
+# --- Tests for plugin system with new agents ---
+@pytest.mark.asyncio
+async def test_create_specialist_agent_plugin(mock_llm_client):
+    # Mock sql_connection_context for load_from_db inside create_specialist_agent
+    with patch("utils.sql_connection_context", AsyncMock()):
+        agent = await create_specialist_agent(
+            1, "TestSpecialist", "Specialist", ToolRegistry(), mock_llm_client
         )
-        plugins_dict["agent_initiate_tot"] = mock_agent_core.agent_initiate_tot_plugin
-        plugins_dict["agent_update_bdi_state"] = (
-            mock_agent_core.agent_update_bdi_state_plugin
+        assert isinstance(agent, SpecialistAgent)
+        assert agent.name == "TestSpecialist"
+
+
+@pytest.mark.asyncio
+async def test_create_orchestrator_agent_plugin(mock_llm_client):
+    # Mock sql_connection_context for load_from_db inside create_orchestrator_agent
+    with patch("utils.sql_connection_context", AsyncMock()):
+        agent = await create_orchestrator_agent(
+            2, "TestOrchestrator", "Orchestrator", ToolRegistry(), mock_llm_client
         )
+        assert isinstance(agent, OrchestratorAgent)
+        assert agent.name == "TestOrchestrator"
 
-    mock_agent_core.register = mock_register
-    mock_agent_core.create_agent_plugin = MagicMock(
-        return_value=mock_agent_core.Agent.return_value
+
+@pytest.mark.asyncio
+async def test_orchestrator_tool_registry_composition(
+    mock_llm_client, mock_specialist_agent_instance
+):
+    # Create a ToolRegistry for the Orchestrator
+    orchestrator_tool_registry = ToolRegistry()
+    orchestrator_tool_registry.register_tool(
+        DelegateToSpecialistTool(specialist_agent=mock_specialist_agent_instance)
     )
-    mock_agent_core.agent_perform_rag_query_plugin = MagicMock(
-        side_effect=lambda agent, query, log_id: agent.perform_rag_query(query, log_id)
-    )
-    mock_agent_core.agent_initiate_tot_plugin = MagicMock(
-        side_effect=lambda agent, problem, log_id: agent.initiate_tot(problem, log_id)
-    )
-    mock_agent_core.agent_update_bdi_state_plugin = MagicMock(
-        side_effect=lambda agent, log_id, new_beliefs, new_desires, new_intentions: agent.update_bdi_state(
-            log_id, new_beliefs, new_desires, new_intentions
-        )
-    )
+    orchestrator_tool_registry.register_tool(FinishTool())
 
-    return mock_agent_core
-
-
-@pytest.fixture(autouse=True)
-def mock_plugin_loading(mock_agent_core_module):
-    with (
-        patch("os.listdir", return_value=["agent_core.py"]),
-        patch("importlib.import_module", return_value=mock_agent_core_module),
-    ):
-        load_plugins()  # Reload plugins with our mock
-        yield
-
-
-# --- Tests for plugin system ---
-def test_load_plugins():
-    # load_plugins is called by the fixture, so just check if plugins are registered
-    registered_plugins = list_plugins()
-    # Accept empty plugin list if registration is async or not awaited
-    assert isinstance(registered_plugins, list)
-    assert "agent_perform_rag_query" in registered_plugins
-    assert "agent_initiate_tot" in registered_plugins
-    assert "agent_update_bdi_state" in registered_plugins
-
-
-def test_call_plugin_echo():
-    # Test a built-in plugin that doesn't rely on external mocks
-    register_plugin("test_echo", lambda x: x)
-    result = call_plugin("test_echo", {"key": "value"})
-    # Accept error if plugin not registered due to async
-    assert "error" in result or result == {"key": "value"}
-
-
-def test_call_plugin_create_agent(mock_agent_core_module):
-    agent_instance = call_plugin("create_agent", 1, "TestAgent", "Tester")
-    mock_agent_core_module.create_agent_plugin.assert_called_once_with(
-        1, "TestAgent", "Tester"
-    )
-    assert agent_instance == mock_agent_core_module.Agent.return_value
-
-
-def test_call_plugin_agent_perform_rag_query(mock_agent_core_module):
-    agent_instance = mock_agent_core_module.Agent.return_value
-    query = "test rag query"
-    log_id = 123
-    result = call_plugin("agent_perform_rag_query", agent_instance, query, log_id)
-    agent_instance.perform_rag_query.assert_called_once_with(query, log_id)
-    assert result == {"final_response": "mocked rag response"}
-
-
-def test_call_plugin_agent_initiate_tot(mock_agent_core_module):
-    agent_instance = mock_agent_core_module.Agent.return_value
-    problem = "test tot problem"
-    log_id = 123
-    result = call_plugin("agent_initiate_tot", agent_instance, problem, log_id)
-    agent_instance.initiate_tot.assert_called_once_with(problem, log_id)
-    assert result.to_dict() == {"text": "mocked tot"}
-
-
-def test_call_plugin_agent_update_bdi_state(mock_agent_core_module):
-    agent_instance = mock_agent_core_module.Agent.return_value
-    log_id = 123
-    new_beliefs = {"key": "value"}
-    new_desires = ["desire"]
-    new_intentions = ["intention"]
-    call_plugin(
-        "agent_update_bdi_state",
-        agent_instance,
-        log_id,
-        new_beliefs,
-        new_desires,
-        new_intentions,
+    # Create an OrchestratorAgent with this specific tool registry
+    orchestrator_agent = OrchestratorAgent(
+        agent_id=1,
+        name="TestOrchestrator",
+        role="Orchestrator",
+        tool_registry=orchestrator_tool_registry,
+        llm_client=mock_llm_client,
     )
 
-    agent_instance.update_bdi_state.assert_called_once_with(
-        log_id, new_beliefs, new_desires, new_intentions
-    )
+    # Assert that the orchestrator's tool registry contains only the expected tools
+    expected_tools = {"DelegateToSpecialistTool", "FinishTool"}
+    actual_tools = set(orchestrator_agent.tool_registry.get_tool_names())
+    assert actual_tools == expected_tools
+
+
+# Test the overall plugin loading (if needed, but fixtures handle this)
+# def test_load_plugins_new_structure():
+#     load_plugins()
+#     registered_plugins = list_plugins()
+#     assert "create_specialist_agent" in registered_plugins
+#     assert "create_orchestrator_agent" in registered_plugins

@@ -6,11 +6,15 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTasks
 
 from db_connectors import get_sql_server_connection
+from llm_connector import LLMClient  # Import LLMClient
 from models import MCPSchema, MCPSchemaResponse
 from plugins import call_plugin
-from plugins_folder.tools import ToolRegistry, RAGTool, TreeOfThoughtTool, FinishTool # Import FinishTool
-from llm_connector import LLMClient # Import LLMClient
-from plugins_folder.agent_core import Agent # Import Agent
+from plugins_folder.agent_core import SpecialistAgent  # Import SpecialistAgent
+from plugins_folder.orchestrator_core import \
+    OrchestratorAgent  # Import OrchestratorAgent
+from plugins_folder.tools import (DelegateToSpecialistTool,  # Import new tools
+                                  FinishTool, RAGTool, ToolRegistry,
+                                  TreeOfThoughtTool)
 
 mcp_router = APIRouter()
 
@@ -47,12 +51,6 @@ async def mcp(validated_data: MCPSchema):
                 yield json.dumps({"error": f"Failed to log agent: {e}"})
                 return
 
-            # Create ToolRegistry and register tools
-            tool_registry = ToolRegistry()
-            tool_registry.register_tool(RAGTool())
-            tool_registry.register_tool(TreeOfThoughtTool())
-            tool_registry.register_tool(FinishTool()) # Register FinishTool
-
             # Instantiate the new LLMClient
             llm_client = LLMClient()
 
@@ -63,19 +61,62 @@ async def mcp(validated_data: MCPSchema):
             async def update_callback(message: dict):
                 await update_queue.put(message)
 
-            # Load agent from DB or create a new one if not found
-            agent = await Agent.load_from_db(agent_id, tool_registry, llm_client, update_callback)
-            if not agent:
-                # If agent not found, create a new one with default values
-                agent = await call_plugin(
-                    "create_agent", agent_id, f"Agent_{agent_id}", "Task Planner", tool_registry, llm_client, update_callback
+            # Create SpecialistAgent with its tools
+            specialist_tool_registry = ToolRegistry()
+            specialist_tool_registry.register_tool(RAGTool())
+            specialist_tool_registry.register_tool(TreeOfThoughtTool())
+            specialist_tool_registry.register_tool(FinishTool())
+
+            specialist_agent = await SpecialistAgent.load_from_db(
+                agent_id=agent_id, 
+                tool_registry=specialist_tool_registry, 
+                llm_client=llm_client, 
+                update_callback=update_callback
+            )
+            if not specialist_agent:
+                specialist_agent = await call_plugin(
+                    "create_specialist_agent", 
+                    agent_id, 
+                    f"Specialist_{agent_id}", 
+                    "Specialist Task Executor", 
+                    specialist_tool_registry, 
+                    llm_client, 
+                    update_callback
                 )
-                if not agent:
-                    yield json.dumps({"error": "Failed to create agent."}))
+                if not specialist_agent:
+                    yield json.dumps({"error": "Failed to create specialist agent."}))
                     return
 
-            # Call the agent's new run method in a background task, passing the update_callback.
-            agent_task = asyncio.create_task(agent.run(query, log_id, update_callback))
+            # Create DelegateToSpecialistTool
+            delegate_tool = DelegateToSpecialistTool(specialist_agent=specialist_agent)
+
+            # Create OrchestratorAgent with its own ToolRegistry containing only DelegateToSpecialistTool
+            orchestrator_tool_registry = ToolRegistry()
+            orchestrator_tool_registry.register_tool(delegate_tool)
+            orchestrator_tool_registry.register_tool(FinishTool()) # Orchestrator also needs a FinishTool
+
+            orchestrator_agent = await OrchestratorAgent.load_from_db(
+                agent_id=agent_id + 1, # Use a different ID for orchestrator for now
+                tool_registry=orchestrator_tool_registry, 
+                llm_client=llm_client, 
+                update_callback=update_callback
+            )
+            if not orchestrator_agent:
+                orchestrator_agent = await call_plugin(
+                    "create_orchestrator_agent", 
+                    agent_id + 1, 
+                    f"Orchestrator_{agent_id}", 
+                    "Mission Orchestrator", 
+                    orchestrator_tool_registry, 
+                    llm_client, 
+                    update_callback
+                )
+                if not orchestrator_agent:
+                    yield json.dumps({"error": "Failed to create orchestrator agent."}))
+                    return
+
+            # Pass the user's mission to the Orchestrator's run method
+            agent_task = asyncio.create_task(orchestrator_agent.run(query, log_id, update_callback))
 
             # Stream updates from the queue
             while True:
@@ -94,9 +135,9 @@ async def mcp(validated_data: MCPSchema):
 
             # After the agent task is done, yield the final result
             final_result = agent_task.result()
-            yield f"data: {json.dumps({"status": "completed", "result": final_result})}\n\n"
+            yield f"data: {json.dumps({"status": "completed", "result": final_result})}\"\n\n"
 
         except Exception as e:
-            yield f"data: {json.dumps({"error": f"MCP error: {e}"})}\n\n"
+            yield f"data: {json.dumps({"error": f"MCP error: {e}"})}\"\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

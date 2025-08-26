@@ -11,8 +11,12 @@ from transformers import pipeline
 # Import database connection functions from db_connectors
 from db_connectors import get_sql_server_connection
 from plugins import call_plugin
-from query_utils import (DOCUMENT_SELECT_LIKE, SEARCH_NODES_CONTAINS_TEXT,
-                         execute_sql_query, sql_server_connection_context)
+from query_utils import (
+    DOCUMENT_SELECT_LIKE,
+    SEARCH_NODES_CONTAINS_TEXT,
+    execute_sql_query,
+    sql_server_connection_context,
+)
 from utils import milvus_connection_context, neo4j_connection_context
 
 logger = logging.getLogger(__name__)

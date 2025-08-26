@@ -1,7 +1,6 @@
 import pytest
 
-from db_connectors import (get_milvus_client, get_neo4j_driver,
-                           get_sql_server_connection)
+from db_connectors import get_milvus_client, get_neo4j_driver, get_sql_server_connection
 
 
 @pytest.mark.asyncio

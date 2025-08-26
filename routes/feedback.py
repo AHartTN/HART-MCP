@@ -10,7 +10,6 @@ feedback_router = APIRouter()
 @feedback_router.post("/feedback")
 async def feedback_route(feedback: FeedbackSchema):
     try:
-
         # ...existing code...
         return JSONResponse(content={"message": "Feedback received"}, status_code=200)
     except Exception as e:

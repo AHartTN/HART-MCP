@@ -29,9 +29,11 @@ app.include_router(mcp_router)
 app.include_router(retrieve_router)
 app.include_router(status_router)
 
+
 @app.get("/")
 async def read_root():
     return FileResponse("static/index.html")
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -5,7 +5,6 @@ from pydantic import BaseModel
 from plugins_folder.agent_core import Agent  # Import the Agent class
 from utils import logger
 
-
 agent_router = APIRouter()
 
 

@@ -5,8 +5,7 @@ import traceback
 from dataclasses import dataclass
 
 from config import MILVUS_COLLECTION
-from db_connectors import (get_milvus_client, get_neo4j_driver,
-                           get_sql_server_connection)
+from db_connectors import get_milvus_client, get_neo4j_driver, get_sql_server_connection
 
 # Constants for SourceTable
 SOURCE_TABLE_CHUNKS = "Chunks"

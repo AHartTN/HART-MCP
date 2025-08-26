@@ -1,6 +1,8 @@
+import logging
 from abc import ABC, abstractmethod
 from typing import Dict, List
-import logging
+
+from plugins_folder.agent_core import SpecialistAgent  # Import SpecialistAgent
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +53,7 @@ class RAGTool(BaseTool):
 
 
 class Thought:
-    def __init__(self, text: str, score: float, children: List['Thought'] = None):
+    def __init__(self, text: str, score: float, children: List["Thought"] = None):
         self.text = text
         self.score = score
         self.children = children or []
@@ -98,11 +100,23 @@ class FinishTool(BaseTool):
         return query
 
 
-class FinishTool(BaseTool):
+class DelegateToSpecialistTool(BaseTool):
+    def __init__(self, specialist_agent: SpecialistAgent):
+        self.specialist_agent = specialist_agent
+
     @property
     def name(self) -> str:
-        return "FinishTool"
+        return "DelegateToSpecialistTool"
 
-    async def execute(self, query: str):
-        logger.info(f"FinishTool executing with query: {query}")
-        return query
+    async def execute(self, mission_prompt: str) -> dict:
+        logger.info(f"DelegateToSpecialistTool delegating mission: {mission_prompt}")
+        # Assuming log_id is managed by the orchestrator or passed down
+        # For simplicity, we'll use a placeholder log_id here. In a real system,
+        # this would need to be properly managed to link specialist logs to orchestrator logs.
+        # The update_callback is passed down to the specialist so its thoughts are streamed.
+        result = await self.specialist_agent.run(
+            mission_prompt,
+            log_id=1,
+            update_callback=self.specialist_agent.update_callback,
+        )
+        return result
