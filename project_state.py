@@ -1,9 +1,11 @@
 import asyncio
 
+
 class ProjectState:
     """
     A class to manage a shared dictionary (the "state") for a project.
     """
+
     def __init__(self):
         self._state = {}
         self._lock = asyncio.Lock()

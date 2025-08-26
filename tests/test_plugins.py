@@ -8,7 +8,6 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from llm_connector import LLMClient
-from plugins import call_plugin, list_plugins, load_plugins, register_plugin
 from plugins_folder.agent_core import SpecialistAgent, create_agent
 from plugins_folder.orchestrator_core import (
     OrchestratorAgent,

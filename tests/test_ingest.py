@@ -2,7 +2,8 @@ from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient  # Import TestClient from fastapi.testclient
+from fastapi.testclient import \
+    TestClient  # Import TestClient from fastapi.testclient
 
 from server import app  # Import the main FastAPI app
 from utils import chunk_text

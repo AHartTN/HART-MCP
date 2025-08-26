@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -130,7 +130,9 @@ def test_select_best_thought():
 
 # --- Tests for initiate_tree_of_thought ---
 @pytest.mark.asyncio
-async def test_initiate_tree_of_thought(mock_sql_server_connection, mock_generate_response):
+async def test_initiate_tree_of_thought(
+    mock_sql_server_connection, mock_generate_response
+):
     mock_conn, mock_cursor = mock_sql_server_connection
     mock_cursor.lastrowid = 1  # Simulate a new log_id from lastrowid
 

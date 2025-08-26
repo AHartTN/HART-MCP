@@ -107,6 +107,7 @@ class FinishTool(BaseTool):
 class DelegateToSpecialistTool(BaseTool):
     def __init__(self, specialist_agent):
         from plugins_folder.agent_core import SpecialistAgent
+
         self.specialist_agent: SpecialistAgent = specialist_agent
 
     @property
@@ -118,8 +119,10 @@ class DelegateToSpecialistTool(BaseTool):
             data = json.loads(query)
             mission_prompt = data.get("mission_prompt")
             log_id = data.get("log_id")
-        except json.JSONDecodeError:
-            raise ValueError("Invalid JSON format for DelegateToSpecialistTool. Expected a JSON string with 'mission_prompt' and 'log_id'.")
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "Invalid JSON format for DelegateToSpecialistTool. Expected a JSON string with 'mission_prompt' and 'log_id'."
+            ) from e
 
         logger.info(f"DelegateToSpecialistTool delegating mission: {mission_prompt}")
         # The update_callback is passed down to the specialist so its thoughts are streamed.
@@ -129,6 +132,7 @@ class DelegateToSpecialistTool(BaseTool):
             update_callback=self.specialist_agent.update_callback,
         )
         return result
+
 
 class WriteToSharedStateTool(BaseTool):
     def __init__(self, project_state: ProjectState):
@@ -148,14 +152,17 @@ class WriteToSharedStateTool(BaseTool):
             data = json.loads(query)
             key = data.get("key")
             value = data.get("value")
-        except json.JSONDecodeError:
-            raise ValueError("Invalid JSON format for WriteToSharedStateTool. Expected a JSON string with 'key' and 'value'.")
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "Invalid JSON format for WriteToSharedStateTool. Expected a JSON string with 'key' and 'value'."
+            ) from e
 
         if not key:
             raise ValueError("Missing 'key' in data for WriteToSharedStateTool.")
         logger.info(f"Writing to shared state: key='{key}'")
         self._project_state.update_state(key, value)
         return f"Successfully wrote to shared state with key '{key}'."
+
 
 class ReadFromSharedStateTool(BaseTool):
     def __init__(self, project_state: ProjectState):
@@ -179,6 +186,7 @@ class ReadFromSharedStateTool(BaseTool):
             return json.dumps(value)
         return value
 
+
 class SendClarificationTool(BaseTool):
     def __init__(self, project_state: ProjectState):
         self._project_state = project_state
@@ -195,6 +203,7 @@ class SendClarificationTool(BaseTool):
         self._project_state.update_state("clarification_for_orchestrator", query)
         return "Successfully sent clarification to orchestrator."
 
+
 class CheckForClarificationsTool(BaseTool):
     def __init__(self, project_state: ProjectState):
         self._project_state = project_state
@@ -207,7 +216,7 @@ class CheckForClarificationsTool(BaseTool):
         """
         Checks for clarifications from specialists.
         """
-        logger.info(f"Checking for clarifications from specialists.")
+        logger.info("Checking for clarifications from specialists.")
         clarification = self._project_state.get_state("clarification_for_orchestrator")
         if clarification:
             # Clear the clarification after reading it

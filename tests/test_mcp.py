@@ -1,25 +1,15 @@
-import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from llm_connector import LLMClient
-from plugins_folder.agent_core import SpecialistAgent, create_agent
+from plugins_folder.agent_core import SpecialistAgent
 from plugins_folder.orchestrator_core import (
     OrchestratorAgent,
-    create_orchestrator_agent,
-)
-from plugins_folder.tools import (
-    DelegateToSpecialistTool,
-    FinishTool,
-    RAGTool,
-    ToolRegistry,
-    TreeOfThoughtTool,
 )
 from server import app
-from utils import sql_connection_context
 
 
 @pytest.fixture
@@ -113,7 +103,7 @@ async def test_mcp_streaming_orchestrator_delegation_success(
                     AsyncMock(spec=OrchestratorAgent),  # For create_orchestrator_agent
                 ]
             ),
-        ) as mock_call_plugin,
+        ) as _,
     ):
         response = client.post(
             "/mcp", json={"query": mission_query, "agent_id": agent_id}
@@ -269,7 +259,7 @@ async def test_mcp_streaming_orchestrator_load_from_db(
                     mock_existing_orchestrator,  # For create_orchestrator_agent (if called)
                 ]
             ),
-        ) as mock_call_plugin,
+        ) as _,
     ):
         response = client.post(
             "/mcp", json={"query": mission_query, "agent_id": agent_id}

@@ -19,7 +19,7 @@ async def test_get_sql_server_connection(set_sql_server_env):
 
 @pytest.mark.asyncio
 async def test_get_milvus_client(set_milvus_env):
-    client = get_milvus_client()
+    client = await get_milvus_client()
     # This test assumes a Milvus instance is running locally.
     if client:
         assert client is not None

@@ -5,12 +5,9 @@ import logging
 from typing import Callable, Dict, List, Optional
 
 from llm_connector import LLMClient  # Import the new LLMClient
-from plugins_folder.tools import (
-    ToolRegistry,
-)  # Assuming ToolRegistry is in plugins_folder/tools.py
+from project_state import ProjectState
 from prompts import AGENT_CONSTITUTION
 from utils import sql_connection_context
-from project_state import ProjectState
 
 
 def get_utc_timestamp():
@@ -58,14 +55,20 @@ class SpecialistAgent:
 
             await asyncio.to_thread(
                 cursor.execute,
-                "SELECT AgentID, Name, Role FROM Agents WHERE AgentID = ?",
+                "SELECT AgentID, Name, Role, BDIState FROM Agents WHERE AgentID = ?",
                 agent_id,
             )
             row = await asyncio.to_thread(cursor.fetchone)
             if row:
                 agent_id, name, role = row
                 agent = cls(
-                    agent_id, name, role, tool_registry, llm_client, update_callback, project_state
+                    agent_id,
+                    name,
+                    role,
+                    tool_registry,
+                    llm_client,
+                    update_callback,
+                    project_state,
                 )
                 # BDIState is part of AgentLogs, not Agents table. Initialize empty.
                 agent.bdi_state = {"beliefs": {}, "desires": [], "intentions": []}
@@ -130,7 +133,11 @@ class SpecialistAgent:
 
         if self.update_callback:
             await self.update_callback(
-                {"type": "mission_start", "content": mission_prompt, "agent_name": self.name}
+                {
+                    "type": "mission_start",
+                    "content": mission_prompt,
+                    "agent_name": self.name,
+                }
             )
 
         for step in range(10):  # Max 10 steps for the cognitive loop
@@ -156,7 +163,11 @@ class SpecialistAgent:
 
             if self.update_callback:
                 await self.update_callback(
-                    {"type": "thought_process", "content": f"Step {step}: Reasoning...", "agent_name": self.name}
+                    {
+                        "type": "thought_process",
+                        "content": f"Step {step}: Reasoning...",
+                        "agent_name": self.name,
+                    }
                 )
 
             # c. Call self.llm.invoke(prompt) to get the agent's next thought and action.
@@ -183,7 +194,9 @@ class SpecialistAgent:
 
                 self.scratchpad.append(f"Thought: {thought}")
                 if self.update_callback:
-                    await self.update_callback({"type": "thought", "content": thought, "agent_name": self.name})
+                    await self.update_callback(
+                        {"type": "thought", "content": thought, "agent_name": self.name}
+                    )
 
                 # e. Act: If the chosen tool is FinishTool, break the loop and return the result.
                 if tool_name == "FinishTool":
@@ -191,7 +204,11 @@ class SpecialistAgent:
                     self.scratchpad.append(f"Final Answer: {final_answer}")
                     if self.update_callback:
                         await self.update_callback(
-                            {"type": "final_answer", "content": final_answer, "agent_name": self.name}
+                            {
+                                "type": "final_answer",
+                                "content": final_answer,
+                                "agent_name": self.name,
+                            }
                         )
                     break
                 else:
@@ -219,7 +236,11 @@ class SpecialistAgent:
                     self.scratchpad.append(observation)
                     if self.update_callback:
                         await self.update_callback(
-                            {"type": "observation", "content": observation, "agent_name": self.name}
+                            {
+                                "type": "observation",
+                                "content": observation,
+                                "agent_name": self.name,
+                            }
                         )
 
                     # Update BDI state (beliefs, desires, intentions can be updated based on tool results)
@@ -236,7 +257,11 @@ class SpecialistAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "error", "content": error_message, "agent_name": self.name}
+                        {
+                            "type": "error",
+                            "content": error_message,
+                            "agent_name": self.name,
+                        }
                     )
                 break
             except ValueError as e:
@@ -245,7 +270,11 @@ class SpecialistAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "error", "content": error_message, "agent_name": self.name}
+                        {
+                            "type": "error",
+                            "content": error_message,
+                            "agent_name": self.name,
+                        }
                     )
                 break
             except Exception as e:
@@ -254,7 +283,11 @@ class SpecialistAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "error", "content": error_message, "agent_name": self.name}
+                        {
+                            "type": "error",
+                            "content": error_message,
+                            "agent_name": self.name,
+                        }
                     )
                 break
 
@@ -264,7 +297,7 @@ class SpecialistAgent:
             )
 
         # Reflect on the scratchpad and update beliefs
-        summary_prompt = f"Please summarize the following mission scratchpad, focusing on key actions, observations, and outcomes. This summary will be used to update the agent's long-term beliefs.\n\nScratchpad:\nscratchpad_content_for_summary"
+        summary_prompt = "Please summarize the following mission scratchpad, focusing on key actions, observations, and outcomes. This summary will be used to update the agent's long-term beliefs.\n\nScratchpad:\nscratchpad_content_for_summary"
         mission_summary = await self.llm.invoke(summary_prompt)
         logger.info(f"Mission Summary for BDI update: {mission_summary}")
 

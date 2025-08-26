@@ -143,7 +143,7 @@ async def process_change_log_entry(entry, milvus_client, neo4j_driver):
 
 async def all_connections_ready(sql_conn, milvus_client, neo4j_driver):
     # Await the async clients
-    return all([sql_conn, await milvus_client, await neo4j_driver])
+    return all([sql_conn, milvus_client, neo4j_driver])
 
 
 async def poll_changes(sql_conn, last_processed_change_id):

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import uuid
+
 from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -10,17 +11,11 @@ from models import MCPSchema
 from plugins import call_plugin
 from plugins_folder.agent_core import SpecialistAgent
 from plugins_folder.orchestrator_core import OrchestratorAgent
-from plugins_folder.tools import (
-    CheckForClarificationsTool,
-    DelegateToSpecialistTool,
-    FinishTool,
-    RAGTool,
-    ReadFromSharedStateTool,
-    SendClarificationTool,
-    ToolRegistry,
-    TreeOfThoughtTool,
-    WriteToSharedStateTool,
-)
+from plugins_folder.tools import (CheckForClarificationsTool,
+                                  DelegateToSpecialistTool, FinishTool,
+                                  RAGTool, ReadFromSharedStateTool,
+                                  SendClarificationTool, ToolRegistry,
+                                  TreeOfThoughtTool, WriteToSharedStateTool)
 from project_state import ProjectState
 
 mcp_router = APIRouter()
@@ -28,7 +23,10 @@ mcp_router = APIRouter()
 # In-memory storage for mission queues. A more robust solution would use Redis or a similar message broker.
 mission_queues = {}
 
-async def run_agent_mission(query: str, agent_id: int, mission_id: str, project_state: ProjectState):
+
+async def run_agent_mission(
+    query: str, agent_id: int, mission_id: str, project_state: ProjectState
+):
     """This function runs the agent mission in the background."""
     update_queue = mission_queues.get(mission_id)
     if not update_queue:
@@ -42,7 +40,9 @@ async def run_agent_mission(query: str, agent_id: int, mission_id: str, project_
         # Database logging
         conn = await get_sql_server_connection()
         if not conn:
-            await update_callback({"error": "Failed to connect to SQL Server for logging."} )
+            await update_callback(
+                {"error": "Failed to connect to SQL Server for logging."}
+            )
             return
 
         cursor = await asyncio.to_thread(conn.cursor)
@@ -91,7 +91,9 @@ async def run_agent_mission(query: str, agent_id: int, mission_id: str, project_
         orchestrator_tool_registry = ToolRegistry()
         orchestrator_tool_registry.register_tool(delegate_tool)
         orchestrator_tool_registry.register_tool(FinishTool())
-        orchestrator_tool_registry.register_tool(CheckForClarificationsTool(project_state))
+        orchestrator_tool_registry.register_tool(
+            CheckForClarificationsTool(project_state)
+        )
 
         orchestrator_agent = await OrchestratorAgent.load_from_db(
             agent_id=agent_id + 1,  # Placeholder, see reflexion
@@ -132,7 +134,9 @@ async def mcp(validated_data: MCPSchema, background_tasks: BackgroundTasks):
 
     mission_queues[mission_id] = asyncio.Queue()
 
-    background_tasks.add_task(run_agent_mission, query, agent_id, mission_id, project_state)
+    background_tasks.add_task(
+        run_agent_mission, query, agent_id, mission_id, project_state
+    )
 
     return JSONResponse({"mission_id": mission_id})
 
