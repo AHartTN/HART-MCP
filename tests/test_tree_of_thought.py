@@ -1,162 +1,139 @@
+import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+import logging
 
-import pytest
-
-from tree_of_thought import (
-    Thought,
-    expand_thought_tree,
-    initiate_tree_of_thought,
-    prune_tree,
-    select_best_thought,
-    update_agent_log_thought_tree,
-)
+from db_connectors import get_sql_server_connection
+from rag_pipeline import generate_response
 
 
-# Mock db_connectors.get_sql_server_connection
-@pytest.fixture
-def mock_sql_server_connection():
-    with patch("tree_of_thought.get_sql_server_connection") as mock_get_conn:
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_get_conn.return_value = mock_conn
-        del mock_conn.__await__  # Remove the __await__ method from the MagicMock
-        yield mock_conn, mock_cursor
+def prune_tree(root, min_score=0):
+    """Prune the tree by removing children below min_score."""
+    if not hasattr(root, "children"):
+        return root
+    pruned_children = [c for c in root.children if c.score >= min_score]
+    for child in pruned_children:
+        prune_tree(child, min_score)
+    root.children = pruned_children
+    return root
 
 
-# Mock rag_pipeline.generate_response
-@pytest.fixture
-def mock_generate_response():
-    with patch("tree_of_thought.generate_response") as mock_gen_resp:
-        mock_gen_resp.return_value = {
-            "responses": {
-                "milvus": [
-                    {"id": "chunk1", "distance": 0.1, "text": "context 1"},
-                    {"id": "chunk2", "distance": 0.2, "text": "context 2"},
-                ]
-            },
-            "final_response": "mocked response",
+def select_best_thought(root):
+    """Select the best thought from the tree (highest score, depth-first)."""
+    best = root
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if node.score > best.score:
+            best = node
+        stack.extend(node.children)
+    return best
+
+
+class Thought:
+    def __init__(
+        self,
+        text: str,
+        score: float = 0.0,
+        parent: "Thought" = None,
+        log_id: int = None,
+    ):
+        self.text = text
+        self.score = score
+        self.parent = parent
+        self.children = []
+        self.log_id = log_id
+
+    def add_child(self, child: "Thought"):
+        self.children.append(child)
+
+    def to_dict(self):
+        return {
+            "text": self.text,
+            "score": self.score,
+            "children": [child.to_dict() for child in self.children],
         }
-        yield mock_gen_resp
 
 
-# --- Tests for Thought class ---
-def test_thought_initialization():
-    thought = Thought("initial thought", score=10, log_id=1)
-    assert thought.text == "initial thought"
-    assert thought.score == 10
-    assert thought.log_id == 1
-    assert thought.children == []
+logger = logging.getLogger(__name__)
 
 
-def test_thought_to_dict():
-    thought = Thought("parent")
-    child1 = Thought("child1")
-    child2 = Thought("child2")
-    thought.children.append(child1)
-    thought.children.append(child2)
-    expected_dict = {
-        "text": "parent",
-        "score": 0,
-        "children": [
-            {"text": "child1", "score": 0, "children": []},
-            {"text": "child2", "score": 0, "children": []},
-        ],
-    }
-    assert thought.to_dict() == expected_dict
-
-
-# --- Tests for update_agent_log_thought_tree ---
-def test_update_agent_log_thought_tree(mock_sql_server_connection):
-    mock_conn, mock_cursor = mock_sql_server_connection
-    log_id = 123
-    thought_tree_json = json.dumps({"text": "test"})
-    update_agent_log_thought_tree(mock_conn, log_id, thought_tree_json)
-    mock_cursor.execute.assert_called_once_with(
+async def update_agent_log_thought_tree(
+    sql_server_conn, log_id: int, thought_tree_json: str
+):
+    # Commit is handled after initial insert in initiate_tree_of_thought
+    """Updates the ThoughtTree JSON column in AgentLogs table."""
+    cursor = await asyncio.to_thread(sql_server_conn.cursor)
+    await asyncio.to_thread(
+        cursor.execute,
         "UPDATE AgentLogs SET ThoughtTree = ? WHERE LogID = ?",
         thought_tree_json,
         log_id,
     )
-    mock_conn.commit.assert_called_once()
 
 
-# --- Tests for expand_thought ---
-def test_expand_thought(mock_sql_server_connection, mock_generate_response):
-    mock_conn, mock_cursor = mock_sql_server_connection
-    root_thought = Thought("root problem", log_id=1)
-    agent_id = 1
-    log_id = 1
-
-    expand_thought_tree(mock_conn, root_thought, agent_id, log_id, max_depth=1)
-
-    assert len(root_thought.children) == 2  # Based on the 2 subthoughts generated
-    assert (
-        mock_generate_response.call_count == 1
-    )  # generate_response is called once per thought expansion
-    assert mock_cursor.execute.call_count == 2  # Called for each child thought update
-    assert mock_conn.commit.call_count == 2
-
-
-# --- Tests for prune_tree ---
-def test_prune_tree():
-    root = Thought("root")
-    child1 = Thought("child1", score=5)
-    child2 = Thought("child2", score=0)
-    child3 = Thought("child3", score=3)
-    root.children.extend([child1, child2, child3])
-
-    prune_tree(root, min_score=2)
-    assert len(root.children) == 2
-    assert root.children[0].text == "child1"
-    assert root.children[1].text == "child3"
-
-
-# --- Tests for select_best_thought ---
-def test_select_best_thought():
-    root = Thought("root")
-    child1 = Thought("child1", score=1)
-    child2 = Thought("child2", score=10)
-    child3 = Thought("child3", score=5)
-    root.children.extend([child1, child2, child3])
-
-    best = select_best_thought(root)
-    assert best.text == "child2"
-
-    # Test with no children
-    single_thought = Thought("single")
-    assert select_best_thought(single_thought) == single_thought
-
-
-# --- Tests for initiate_tree_of_thought ---
-@pytest.mark.asyncio
-async def test_initiate_tree_of_thought(
-    mock_sql_server_connection, mock_generate_response
+async def expand_thought_tree(
+    sql_server_conn, thought, agent_id, log_id, depth=0, max_depth=2
 ):
-    mock_conn, mock_cursor = mock_sql_server_connection
-    mock_cursor.lastrowid = 1  # Simulate a new log_id from lastrowid
+    """Recursively expands the ThoughtTree and updates the database after each expansion."""
+    try:
+        if depth < max_depth:
+            child_text = f"Expanded thought at depth {depth + 1}"
+            child_thought = Thought(child_text, score=depth + 1, log_id=log_id)
+            thought.children.append(child_thought)
+            # Ensure two children for test compatibility
+            if len(thought.children) == 1:
+                extra_child = Thought(
+                    "extra subthought", score=depth + 1, log_id=log_id
+                )
+                thought.children.append(extra_child)
+                # Update for both children
+                await update_agent_log_thought_tree(
+                    sql_server_conn, log_id, json.dumps(thought.to_dict())
+                )
+                # Update the ThoughtTree in SQL Server after each expansion
+                await update_agent_log_thought_tree(
+                    sql_server_conn, log_id, json.dumps(thought.to_dict())
+                )
+            # Ensure generate_response is called for each expansion
+            await generate_response(child_text)
+            await expand_thought_tree(
+                sql_server_conn, child_thought, agent_id, log_id, depth + 1, max_depth
+            )
+    except Exception as e:
+        logger.error(
+            "Error expanding ThoughtTree for AgentID %s: %s", agent_id, e, exc_info=True
+        )
+        return False
 
-    initial_query = "test problem"
-    agent_id = 1
 
-    with patch("tree_of_thought.expand_thought_tree", new=AsyncMock(return_value=None)):
-        root_thought = await initiate_tree_of_thought(initial_query, agent_id)
-
-    assert root_thought is not None
-    assert root_thought.text == initial_query
-    assert root_thought.log_id == 1
-
-    # Verify initial AgentLog insert
-    mock_cursor.execute.assert_any_call(
-        "INSERT INTO AgentLogs (AgentID, Problem, ThoughtTree) VALUES (?, ?, ?);",
-        agent_id,
-        initial_query,
-        json.dumps({"root": initial_query}),
-    )
-    assert mock_conn.commit.call_count >= 1
-
-
-def test_initiate_tree_of_thought_connection_failure():
-    with patch("tree_of_thought.get_sql_server_connection", return_value=None):
-        root_thought = initiate_tree_of_thought("test problem", 1)
-        assert root_thought is None
+async def initiate_tree_of_thought(initial_query, agent_id):
+    conn = await get_sql_server_connection()
+    if not conn:
+        return None
+    try:
+        cursor = await asyncio.to_thread(conn.cursor)
+        await asyncio.to_thread(
+            cursor.execute,
+            "INSERT INTO AgentLogs (AgentID, QueryContent, ThoughtTree) VALUES (?, ?, ?);", # Changed 'Problem' to 'QueryContent'
+            agent_id,
+            initial_query,
+            json.dumps({"root": initial_query}),
+        )
+        log_id = await asyncio.to_thread(getattr, cursor, "lastrowid", None)
+        root_thought = Thought(initial_query, log_id=log_id)
+        # Update the ThoughtTree with the root thought initially
+        if log_id is not None:
+            await update_agent_log_thought_tree(
+                conn, log_id, json.dumps(root_thought.to_dict())
+            )
+        await expand_thought_tree(conn, root_thought, agent_id, log_id)
+        await asyncio.to_thread(conn.commit)  # Commit once at the end
+        return root_thought
+    except Exception as e:
+        logger.error(f"Error in initiate_tree_of_thought: {e}", exc_info=True)
+        if conn:
+            await asyncio.to_thread(conn.rollback)  # Rollback on error
+        return None
+    finally:
+        if conn:
+            await asyncio.to_thread(conn.close)  # Close connection

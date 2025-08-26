@@ -1,47 +1,47 @@
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from db_connectors import get_milvus_client, get_neo4j_driver, get_sql_server_connection
+from db_connectors import get_sql_server_connection, get_milvus_client, get_neo4j_driver
 
 
 @pytest.mark.asyncio
-async def test_get_sql_server_connection(set_sql_server_env):
-    conn = get_sql_server_connection()
-    # This test assumes a SQL Server instance is running locally with the specified credentials.
-    # If not, this test will fail. For true unit testing, mocking would be required.
-    if conn:
+async def test_get_sql_server_connection_mocked():
+    """
+    Tests get_sql_server_connection by mocking the underlying pyodbc.connect.
+    """
+    with patch("pyodbc.connect", return_value=MagicMock()) as mock_connect:
+        conn = await get_sql_server_connection()
         assert conn is not None
-        conn.close()
-    else:
-        pytest.skip(
-            "SQL Server connection failed, skipping test. Ensure SQL Server is running and credentials are correct."
-        )
+        mock_connect.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_milvus_client(set_milvus_env):
-    client = await get_milvus_client()
-    # This test assumes a Milvus instance is running locally.
-    if client:
+async def test_get_milvus_client_mocked():
+    """
+    Tests get_milvus_client by mocking the underlying MilvusClient.
+    """
+    # Patch asyncio.to_thread to return a mocked MilvusClient instance
+    with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+        mock_milvus_client_instance = MagicMock()
+        mock_to_thread.return_value = mock_milvus_client_instance
+
+        client = await get_milvus_client()
         assert client is not None
-        try:
-            client.list_collections()  # Verify client is active
-            client.close()  # Close the client
-        except Exception as e:
-            pytest.fail(f"Milvus client verification failed: {e}")
-    else:
-        pytest.skip(
-            "Milvus connection failed, skipping test. Ensure Milvus is running."
-        )
+        assert client == mock_milvus_client_instance # Ensure the returned client is our mock
+        mock_to_thread.assert_called_once() # Verify asyncio.to_thread was called
 
 
 @pytest.mark.asyncio
-async def test_get_neo4j_driver(set_neo4j_env):
-    driver = get_neo4j_driver()
-    # This test assumes a Neo4j instance is running locally with the specified credentials.
-    if driver:
+async def test_get_neo4j_driver_mocked():
+    """
+    Tests get_neo4j_driver by mocking the underlying neo4j.GraphDatabase.driver.
+    """
+    # Patch asyncio.to_thread to return a mocked Neo4j driver instance
+    with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+        mock_neo4j_driver_instance = MagicMock()
+        mock_to_thread.return_value = mock_neo4j_driver_instance
+
+        driver = await get_neo4j_driver()
         assert driver is not None
-        driver.close()
-    else:
-        pytest.skip(
-            "Neo4j connection failed, skipping test. Ensure Neo4j is running and credentials are correct."
-        )
+        assert driver == mock_neo4j_driver_instance # Ensure the returned driver is our mock
+        mock_to_thread.assert_called_once() # Verify asyncio.to_thread was called

@@ -1,4 +1,5 @@
-from contextlib import contextmanager
+from contextlib import asynccontextmanager # Import asynccontextmanager
+import asyncio # Import asyncio
 
 """
 Centralized query and connection utilities for SQL Server, Neo4j, and Milvus.
@@ -30,16 +31,17 @@ CHANGELOG_SELECT = (
 # --- SQL Server Connection Context ---
 
 
-@contextmanager
-def sql_server_connection_context(conn):
+@asynccontextmanager # Changed to asynccontextmanager
+async def sql_server_connection_context(conn): # Changed to async def
     cursor = None
     try:
-        cursor = conn.cursor()
+        cursor = await asyncio.to_thread(conn.cursor) # Run cursor() in a thread
         yield conn, cursor
     finally:
         if cursor:
-            cursor.close()
-        conn.close()
+            await asyncio.to_thread(cursor.close) # Run close() in a thread
+        # conn.close() is handled by the caller of get_sql_server_connection
+        # or by the sql_connection_context in utils.py
 
 
 # --- Neo4j Query Templates ---

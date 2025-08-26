@@ -11,8 +11,12 @@ from transformers import pipeline
 # Import database connection functions from db_connectors
 from db_connectors import get_sql_server_connection
 from plugins import call_plugin
-from query_utils import (DOCUMENT_SELECT_LIKE, SEARCH_NODES_CONTAINS_TEXT,
-                         execute_sql_query, sql_server_connection_context)
+from query_utils import (
+    DOCUMENT_SELECT_LIKE,
+    SEARCH_NODES_CONTAINS_TEXT,
+    execute_sql_query,
+    sql_server_connection_context,
+)
 from utils import milvus_connection_context, neo4j_connection_context
 
 logger = logging.getLogger(__name__)
@@ -41,8 +45,9 @@ async def _search_milvus(embedding):
                     "Milvus client is not available. Cannot proceed with Milvus search."
                 )
                 return []
-            results = await search_milvus(
-                milvus_client, embedding, milvus_collection_name
+            # Corrected line: Call search_milvus using asyncio.to_thread
+            results = await asyncio.to_thread(
+                search_milvus, milvus_client, embedding, milvus_collection_name
             )
             return results
     except Exception as e:
@@ -114,7 +119,8 @@ async def get_embedding(text: str) -> Optional[List[float]]:
     """Generate embedding for a given text."""
     if embedding_model:
         try:
-            return await asyncio.to_thread(embedding_model.encode, text).tolist()
+            # Corrected line: await the result of to_thread before calling .tolist()
+            return (await asyncio.to_thread(embedding_model.encode, text)).tolist()
         except Exception as e:
             logger.error(f"Failed to generate embedding: {e}\n{traceback.format_exc()}")
             return None
@@ -252,7 +258,7 @@ async def generate_response(
     # Combine retrieved context for LLM
     combined_context = []
     if milvus_results:
-        combined_context.extend([r["text"] for r in milvus_results if r.get("text")])
+        combined_context.extend([r["text"] for r in milvus_results if r.get("text")] )
     if neo4j_results:
         combined_context.extend(neo4j_results)
     if sql_server_results:

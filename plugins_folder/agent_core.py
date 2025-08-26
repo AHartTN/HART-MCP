@@ -55,7 +55,7 @@ class SpecialistAgent:
 
             await asyncio.to_thread(
                 cursor.execute,
-                "SELECT AgentID, Name, Role, BDIState FROM Agents WHERE AgentID = ?",
+                "SELECT AgentID, Name, Role FROM Agents WHERE AgentID = ?", # Removed BDIState
                 agent_id,
             )
             row = await asyncio.to_thread(cursor.fetchone)

@@ -13,27 +13,31 @@ from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
 from PIL import Image
 
-from db_connectors import (get_milvus_client, get_neo4j_driver,
-                           get_sql_server_connection)
+from db_connectors import (
+    get_milvus_client,
+    get_neo4j_driver,
+    get_sql_server_connection,
+)
 
 logger = logging.getLogger(__name__)
 
 
-@contextmanager
-def neo4j_connection_context():
+@asynccontextmanager # Changed to asynccontextmanager
+async def neo4j_connection_context(): # Changed to async def
     """
-    Synchronous context manager for Neo4j driver.
+    Asynchronous context manager for Neo4j driver.
     Ensures the driver is properly closed.
     """
     from db_connectors import get_neo4j_driver
 
     driver = None
     try:
-        driver = get_neo4j_driver()
+        driver = await get_neo4j_driver() # Await the async function
         yield driver
     finally:
         if driver:
-            driver.close()
+            # Neo4j driver.close() is synchronous, run in a thread
+            await asyncio.to_thread(driver.close)
 
 
 @asynccontextmanager
@@ -90,7 +94,9 @@ async def milvus_connection_context():
 def get_secret_from_keyvault(
     secret_name: str, vault_url: str | None = None
 ) -> str | None:
-    """Retrieve a secret from Azure Key Vault using default credentials."""
+    """
+    Retrieve a secret from Azure Key Vault using default credentials.
+    """
     vault_url = vault_url or os.getenv("AZURE_KEYVAULT_URL")
     if not vault_url:
         logger.error("Key Vault URL not set.")
@@ -108,12 +114,15 @@ def get_secret_from_keyvault(
 
 
 def allowed_file(filename: str) -> bool:
-    """Check if the file extension is allowed."""
+    """
+    Check if the file extension is allowed.
+    """
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-
 def extract_text(file_path: str, file_extension: str) -> str | None:
-    """Extract text from a file based on its extension."""
+    """
+    Extract text from a file based on its extension.
+    """
     try:
         if file_extension == "txt":
             with open(file_path, "r", encoding="utf-8") as f:
@@ -142,7 +151,8 @@ def extract_text(file_path: str, file_extension: str) -> str | None:
 async def update_agent_log_feedback(
     log_id: int, feedback_text: str, rating: int | None, feedback_type: str
 ) -> tuple[bool, str | None]:
-    """Updates the AgentLogs table's Evaluation JSON column with new feedback.
+    """
+    Updates the AgentLogs table's Evaluation JSON column with new feedback.
     Returns a tuple (success: bool, error_message: str | None).
     """
     try:
@@ -176,7 +186,6 @@ async def update_agent_log_feedback(
             traceback.format_exc(),
         )
         return False, "Internal server error during feedback update."
-
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
     """
