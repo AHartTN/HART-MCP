@@ -1,143 +1,159 @@
 import asyncio
 import json
-
-from fastapi import APIRouter
+import uuid
+from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
-from starlette.background import BackgroundTasks
 
 from db_connectors import get_sql_server_connection
-from llm_connector import LLMClient  # Import LLMClient
-from models import MCPSchema, MCPSchemaResponse
+from llm_connector import LLMClient
+from models import MCPSchema
 from plugins import call_plugin
-from plugins_folder.agent_core import SpecialistAgent  # Import SpecialistAgent
-from plugins_folder.orchestrator_core import \
-    OrchestratorAgent  # Import OrchestratorAgent
-from plugins_folder.tools import (DelegateToSpecialistTool,  # Import new tools
-                                  FinishTool, RAGTool, ToolRegistry,
-                                  TreeOfThoughtTool)
+from plugins_folder.agent_core import SpecialistAgent
+from plugins_folder.orchestrator_core import OrchestratorAgent
+from plugins_folder.tools import (
+    CheckForClarificationsTool,
+    DelegateToSpecialistTool,
+    FinishTool,
+    RAGTool,
+    ReadFromSharedStateTool,
+    SendClarificationTool,
+    ToolRegistry,
+    TreeOfThoughtTool,
+    WriteToSharedStateTool,
+)
+from project_state import ProjectState
 
 mcp_router = APIRouter()
 
+# In-memory storage for mission queues. A more robust solution would use Redis or a similar message broker.
+mission_queues = {}
+
+async def run_agent_mission(query: str, agent_id: int, mission_id: str):
+    """This function runs the agent mission in the background."""
+    update_queue = mission_queues.get(mission_id)
+    if not update_queue:
+        print(f"Error: Mission queue not found for mission_id {mission_id}")
+        return
+
+    async def update_callback(message: dict):
+        await update_queue.put(message)
+
+    try:
+        # Database logging
+        conn = await get_sql_server_connection()
+        if not conn:
+            await update_callback({"error": "Failed to connect to SQL Server for logging."} )
+            return
+
+        cursor = await asyncio.to_thread(conn.cursor)
+        await asyncio.to_thread(
+            cursor.execute,
+            "INSERT INTO AgentLogs (AgentID, QueryContent, BDIState) VALUES (?, ?, ?)",
+            agent_id,
+            query,
+            json.dumps({}),
+        )
+        await asyncio.to_thread(conn.commit)
+        log_id = await asyncio.to_thread(getattr, cursor, "lastrowid", None)
+
+        # Agent and tool setup
+        llm_client = LLMClient()
+        project_state = ProjectState()
+
+        specialist_tool_registry = ToolRegistry()
+        specialist_tool_registry.register_tool(RAGTool())
+        specialist_tool_registry.register_tool(TreeOfThoughtTool())
+        specialist_tool_registry.register_tool(FinishTool())
+        specialist_tool_registry.register_tool(WriteToSharedStateTool(project_state))
+        specialist_tool_registry.register_tool(ReadFromSharedStateTool(project_state))
+        specialist_tool_registry.register_tool(SendClarificationTool(project_state))
+
+        specialist_agent = await SpecialistAgent.load_from_db(
+            agent_id=agent_id,
+            tool_registry=specialist_tool_registry,
+            llm_client=llm_client,
+            update_callback=update_callback,
+            project_state=project_state,
+        )
+        if not specialist_agent:
+            specialist_agent = await call_plugin(
+                "create_specialist_agent",
+                agent_id,
+                f"Specialist_{agent_id}",
+                "Specialist Task Executor",
+                specialist_tool_registry,
+                llm_client,
+                update_callback,
+                project_state,
+            )
+
+        delegate_tool = DelegateToSpecialistTool(specialist_agent=specialist_agent)
+
+        orchestrator_tool_registry = ToolRegistry()
+        orchestrator_tool_registry.register_tool(delegate_tool)
+        orchestrator_tool_registry.register_tool(FinishTool())
+        orchestrator_tool_registry.register_tool(CheckForClarificationsTool(project_state))
+
+        orchestrator_agent = await OrchestratorAgent.load_from_db(
+            agent_id=agent_id + 1,  # Placeholder, see reflexion
+            tool_registry=orchestrator_tool_registry,
+            llm_client=llm_client,
+            update_callback=update_callback,
+            project_state=project_state,
+        )
+        if not orchestrator_agent:
+            orchestrator_agent = await call_plugin(
+                "create_orchestrator_agent",
+                agent_id + 1,
+                f"Orchestrator_{agent_id}",
+                "Mission Orchestrator",
+                orchestrator_tool_registry,
+                llm_client,
+                update_callback,
+                project_state,
+            )
+
+        # Run the mission
+        final_result = await orchestrator_agent.run(query, log_id, update_callback)
+        await update_callback({"status": "completed", "result": final_result})
+
+    except Exception as e:
+        await update_callback({"error": f"MCP error: {e}"})
+    finally:
+        # Signal the end of the stream
+        await update_queue.put(None)
+
 
 @mcp_router.post("/mcp")
-async def mcp(validated_data: MCPSchema):
+async def mcp(validated_data: MCPSchema, background_tasks: BackgroundTasks):
     query = validated_data.query
     agent_id = validated_data.agent_id
+    mission_id = str(uuid.uuid4())
 
+    mission_queues[mission_id] = asyncio.Queue()
+
+    background_tasks.add_task(run_agent_mission, query, agent_id, mission_id)
+
+    return JSONResponse({"mission_id": mission_id})
+
+
+@mcp_router.get("/stream/{mission_id}")
+async def stream(mission_id: str):
     async def event_generator():
+        queue = mission_queues.get(mission_id)
+        if not queue:
+            yield json.dumps({"error": "Mission not found"})
+            return
+
         try:
-            # 1. Create initial database log and get log_id
-            try:
-                conn = await get_sql_server_connection()
-            except Exception:
-                conn = None
-
-            if not conn:
-                yield json.dumps({"error": "Failed to connect to SQL Server for logging."}))
-                return
-
-            try:
-                cursor = await asyncio.to_thread(conn.cursor)
-                await asyncio.to_thread(
-                    cursor.execute,
-                    "INSERT INTO AgentLogs (AgentID, QueryContent, BDIState) VALUES (?, ?, ?)",
-                    agent_id,
-                    query,
-                    json.dumps({}),  # Initial empty BDIState
-                )
-                await asyncio.to_thread(conn.commit)
-                log_id = await asyncio.to_thread(getattr, cursor, "lastrowid", None)
-            except Exception as e:
-                yield json.dumps({"error": f"Failed to log agent: {e}"})
-                return
-
-            # Instantiate the new LLMClient
-            llm_client = LLMClient()
-
-            # Create a queue for streaming updates
-            update_queue = asyncio.Queue()
-
-            # Define the update_callback function
-            async def update_callback(message: dict):
-                await update_queue.put(message)
-
-            # Create SpecialistAgent with its tools
-            specialist_tool_registry = ToolRegistry()
-            specialist_tool_registry.register_tool(RAGTool())
-            specialist_tool_registry.register_tool(TreeOfThoughtTool())
-            specialist_tool_registry.register_tool(FinishTool())
-
-            specialist_agent = await SpecialistAgent.load_from_db(
-                agent_id=agent_id, 
-                tool_registry=specialist_tool_registry, 
-                llm_client=llm_client, 
-                update_callback=update_callback
-            )
-            if not specialist_agent:
-                specialist_agent = await call_plugin(
-                    "create_specialist_agent", 
-                    agent_id, 
-                    f"Specialist_{agent_id}", 
-                    "Specialist Task Executor", 
-                    specialist_tool_registry, 
-                    llm_client, 
-                    update_callback
-                )
-                if not specialist_agent:
-                    yield json.dumps({"error": "Failed to create specialist agent."}))
-                    return
-
-            # Create DelegateToSpecialistTool
-            delegate_tool = DelegateToSpecialistTool(specialist_agent=specialist_agent)
-
-            # Create OrchestratorAgent with its own ToolRegistry containing only DelegateToSpecialistTool
-            orchestrator_tool_registry = ToolRegistry()
-            orchestrator_tool_registry.register_tool(delegate_tool)
-            orchestrator_tool_registry.register_tool(FinishTool()) # Orchestrator also needs a FinishTool
-
-            orchestrator_agent = await OrchestratorAgent.load_from_db(
-                agent_id=agent_id + 1, # Use a different ID for orchestrator for now
-                tool_registry=orchestrator_tool_registry, 
-                llm_client=llm_client, 
-                update_callback=update_callback
-            )
-            if not orchestrator_agent:
-                orchestrator_agent = await call_plugin(
-                    "create_orchestrator_agent", 
-                    agent_id + 1, 
-                    f"Orchestrator_{agent_id}", 
-                    "Mission Orchestrator", 
-                    orchestrator_tool_registry, 
-                    llm_client, 
-                    update_callback
-                )
-                if not orchestrator_agent:
-                    yield json.dumps({"error": "Failed to create orchestrator agent."}))
-                    return
-
-            # Pass the user's mission to the Orchestrator's run method
-            agent_task = asyncio.create_task(orchestrator_agent.run(query, log_id, update_callback))
-
-            # Stream updates from the queue
             while True:
-                try:
-                    message = await asyncio.wait_for(update_queue.get(), timeout=1.0) # Adjust timeout as needed
-                    yield f"data: {json.dumps(message)}\n\n"
-                except asyncio.TimeoutError:
-                    pass # No new message, continue waiting
-
-                if agent_task.done():
-                    # Agent task is done, check for any remaining messages in the queue
-                    while not update_queue.empty():
-                        message = await update_queue.get()
-                        yield f"data: {json.dumps(message)}\n\n"
-                    break # Exit the streaming loop
-
-            # After the agent task is done, yield the final result
-            final_result = agent_task.result()
-            yield f"data: {json.dumps({"status": "completed", "result": final_result})}\"\n\n"
-
-        except Exception as e:
-            yield f"data: {json.dumps({"error": f"MCP error: {e}"})}\"\n\n"
+                message = await queue.get()
+                if message is None:  # End of stream signal
+                    break
+                yield f"data: {json.dumps(message)}\n\n"
+        finally:
+            # Clean up the queue
+            if mission_id in mission_queues:
+                del mission_queues[mission_id]
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

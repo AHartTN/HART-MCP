@@ -6,21 +6,21 @@
     <title>Hartonomous Agent UI</title>
     <style>
         body {
-            font-family: sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             margin: 20px;
-            background-color: #f4f4f4;
-            color: #333;
+            background-color: #f0f2f5;
+            color: #1c1e21;
         }
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             background-color: #fff;
             padding: 20px;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         h1 {
-            color: #0056b3;
+            color: #1877f2;
             text-align: center;
             margin-bottom: 20px;
         }
@@ -39,10 +39,11 @@
             width: 100%;
             padding: 10px;
             margin-bottom: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
+            border: 1px solid #dddfe2;
+            border-radius: 6px;
             box-sizing: border-box;
             resize: vertical;
+            font-size: 14px;
         }
         .button-group {
             display: flex;
@@ -50,50 +51,80 @@
             margin-bottom: 20px;
         }
         button {
-            background-color: #007bff;
+            background-color: #1877f2;
             color: white;
             padding: 10px 15px;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 16px;
+            transition: background-color 0.2s;
         }
         button:hover {
-            background-color: #0056b3;
+            background-color: #166fe5;
         }
-        pre {
-            background-color: #eee;
-            padding: 15px;
-            border-radius: 4px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            max-height: 400px;
+        .output-section h2 {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .scratchpad-container {
+            background-color: #f0f2f5;
+            padding: 10px;
+            border-radius: 6px;
+            height: 500px;
             overflow-y: auto;
-            border: 1px solid #ddd;
+            border: 1px solid #dddfe2;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
-        .output-section {
-            margin-top: 20px;
+        .message-bubble {
+            padding: 10px 15px;
+            border-radius: 18px;
+            max-width: 80%;
+            word-wrap: break-word;
         }
-        .output-message div {
-            margin-bottom: 5px;
-            padding: 2px 0;
+        .message-header {
+            font-weight: bold;
+            margin-bottom: 4px;
+            font-size: 12px;
+            color: #65676b;
         }
-        /* Message Type Styling */
-        .mission-start { color: #0056b3; font-weight: bold; }
-        .thought-process { color: #6f42c1; }
-        .thought { color: #333; }
-        .action { color: #28a745; } /* Green for actions */
-        .observation { color: #6c757d; } /* Gray for observations */
-        .final-answer { color: #dc3545; font-weight: bold; } /* Red for final answer */
-        .error { color: #dc3545; font-weight: bold; }
-        .completed { color: #007bff; font-weight: bold; }
-        .unknown { color: #ffc107; }
+        .message-content {
+            font-size: 14px;
+            white-space: pre-wrap;
+        }
 
-        /* Status Styling */
-        .status-running { color: #28a745; font-weight: bold; }
-        .status-idle { color: #6c757d; }
-        .status-completed { color: #007bff; font-weight: bold; }
-        .status-error { color: #dc3545; font-weight: bold; }
+        /* Agent-specific styling */
+        .agent-orchestrator {
+            background-color: #e7f3ff;
+            border: 1px solid #cce0ff;
+            align-self: flex-start;
+        }
+        .agent-specialist {
+            background-color: #f0e6ff;
+            border: 1px solid #d9c2ff;
+            align-self: flex-start;
+            margin-left: 20px;
+        }
+        .system-message {
+            background-color: #e9ecef;
+            border: 1px solid #d6d8db;
+            align-self: center;
+            text-align: center;
+            font-style: italic;
+        }
+        .error-message {
+            background-color: #ffebe5;
+            border: 1px solid #ffc5b5;
+            color: #d92b00;
+            align-self: stretch;
+        }
+        .status-running { color: #31a24c; font-weight: bold; }
+        .status-idle { color: #65676b; }
+        .status-completed { color: #1877f2; font-weight: bold; }
+        .status-error { color: #fa383e; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -114,8 +145,8 @@
         </div>
 
         <div class="output-section">
-            <h2>Agent Output: <button id="clear-output" style="font-size: 14px; padding: 5px 10px;">Clear</button></h2>
-            <pre id="scratchpad-output"></pre>
+            <h2>Agent Stream <button id="clear-output" style="font-size: 12px; padding: 5px 10px;">Clear</button></h2>
+            <div id="scratchpad-output" class="scratchpad-container"></div>
         </div>
     </div>
 
@@ -128,26 +159,44 @@
         const agentIdSpan = document.getElementById('agent-id');
         const agentStatusSpan = document.getElementById('agent-status');
 
-        let currentEventSource = null; // To manage active EventSource connection
+        let currentEventSource = null;
 
-        // Helper function to append styled messages
-        function appendStyledMessage(type, content) {
-            const timestamp = new Date().toLocaleTimeString();
+        function appendMessage(type, content, agentName) {
             const messageDiv = document.createElement('div');
-            messageDiv.className = type; // Apply class for styling
-            messageDiv.innerHTML = `[${timestamp}] [${type.toUpperCase()}]: ${content}`;
+            messageDiv.classList.add('message-bubble');
+
+            let agentClass = 'system-message';
+            if (agentName) {
+                if (agentName.toLowerCase().includes('orchestrator')) {
+                    agentClass = 'agent-orchestrator';
+                } else if (agentName.toLowerCase().includes('specialist')) {
+                    agentClass = 'agent-specialist';
+                }
+            }
+            if (type === 'error') {
+                agentClass = 'error-message';
+            }
+            messageDiv.classList.add(agentClass);
+
+            const header = document.createElement('div');
+            header.classList.add('message-header');
+            const timestamp = new Date().toLocaleTimeString();
+            header.textContent = `${agentName} (${type}) - ${timestamp}`;
+
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('message-content');
+            contentDiv.textContent = content;
+
+            messageDiv.appendChild(header);
+            messageDiv.appendChild(contentDiv);
             scratchpadOutput.appendChild(messageDiv);
-            scratchpadOutput.scrollTop = scratchpadOutput.scrollHeight; // Auto-scroll
+            scratchpadOutput.scrollTop = scratchpadOutput.scrollHeight;
         }
 
-        // Clear Prompt button functionality
-        clearPromptButton.addEventListener('click', () => {
-            missionPromptTextarea.value = '';
-        });
+        clearPromptButton.addEventListener('click', () => { missionPromptTextarea.value = ''; });
 
-        // Clear Output button functionality
         clearOutputButton.addEventListener('click', () => {
-            scratchpadOutput.innerHTML = ''; // Use innerHTML to clear all child divs
+            scratchpadOutput.innerHTML = '';
             agentStatusSpan.textContent = 'Idle';
             agentStatusSpan.className = 'status-idle';
             if (currentEventSource) {
@@ -158,8 +207,7 @@
 
         launchAgentButton.addEventListener('click', () => {
             if (currentEventSource) {
-                currentEventSource.close(); // Close previous connection if exists
-                currentEventSource = null;
+                currentEventSource.close();
             }
 
             const missionPrompt = missionPromptTextarea.value;
@@ -168,88 +216,64 @@
                 return;
             }
 
-            scratchpadOutput.innerHTML = ''; // Clear output on new launch
-            appendStyledMessage('mission-start', 'Launching agent...');
-
-            // For simplicity, using a fixed agent_id. In a real app, this would be dynamic.
-            const agentId = 1; 
+            scratchpadOutput.innerHTML = '';
+            appendMessage('status', 'Launching agent...', 'System');
+            
+            const agentId = 1;
             agentIdSpan.textContent = agentId;
             agentStatusSpan.textContent = 'Running';
             agentStatusSpan.className = 'status-running';
 
-            // Using fetch to send the initial POST request
             fetch('/mcp', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    query: missionPrompt,
-                    agent_id: agentId
-                }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: missionPrompt, agent_id: agentId }),
             })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                // Start EventSource after successful POST, as the streaming response is from the same endpoint
-                // This assumes the /mcp endpoint will immediately start streaming after the initial POST
-                // A more robust solution might involve a separate SSE endpoint or a token from the POST response
-                currentEventSource = new EventSource(`/mcp?agent_id=${agentId}&query=${encodeURIComponent(missionPrompt)}`);
+            .then(response => response.json())
+            .then(data => {
+                if (data.mission_id) {
+                    currentEventSource = new EventSource(`/stream/${data.mission_id}`);
 
-                currentEventSource.onmessage = function(event) {
-                    const data = JSON.parse(event.data);
-                    console.log(data);
+                    currentEventSource.onmessage = function(event) {
+                        try {
+                            const msg = JSON.parse(event.data);
+                            const agentName = msg.agent_name || 'System';
+                            const type = msg.type || 'unknown';
+                            let content = msg.content;
 
-                    if (data.type) {
-                        // Handle agent-specific message types
-                        if (data.type === 'mission_start') {
-                            appendStyledMessage('mission-start', `Mission Started: ${data.content}`);
-                        } else if (data.type === 'thought_process') {
-                            appendStyledMessage('thought-process', data.content);
-                        } else if (data.type === 'thought') {
-                            appendStyledMessage('thought', data.content);
-                        } else if (data.type === 'action') {
-                            appendStyledMessage('action', `Tool: ${data.content.tool}, Query: ${data.content.query}`);
-                        } else if (data.type === 'observation') {
-                            appendStyledMessage('observation', data.content);
-                        } else if (data.type === 'final_answer') {
-                            appendStyledMessage('final-answer', `Final Answer: ${data.content}`);
-                            agentStatusSpan.textContent = 'Completed';
-                            agentStatusSpan.className = 'status-completed';
-                            currentEventSource.close(); 
-                        } else if (data.type === 'error') {
-                            appendStyledMessage('error', `Error: ${data.content}`);
-                            agentStatusSpan.textContent = 'Error';
-                            agentStatusSpan.className = 'status-error';
-                            currentEventSource.close();
+                            if (type.includes('action')) {
+                                content = `Using Tool: ${content.tool}
+Query: ${content.query}`;
+                            } else if (typeof content !== 'string') {
+                                content = JSON.stringify(content, null, 2);
+                            }
+                            
+                            appendMessage(type, content, agentName);
+
+                        } catch (e) {
+                            if (event.data.includes("mission_completed")) {
+                                appendMessage('status', 'Mission Completed.', 'System');
+                                agentStatusSpan.textContent = 'Completed';
+                                agentStatusSpan.className = 'status-completed';
+                                currentEventSource.close();
+                            } else {
+                                appendMessage('raw', event.data, 'System');
+                            }
                         }
-                    } else if (data.status === 'completed') {
-                        appendStyledMessage('completed', `Mission Completed. Final Result: ${JSON.stringify(data.result, null, 2)}`);
-                        agentStatusSpan.textContent = 'Completed';
-                        agentStatusSpan.className = 'status-completed';
-                        currentEventSource.close();
-                    } else if (data.error) { // Catch general errors from the server
-                        appendStyledMessage('error', `Server Error: ${data.error}`);
+                    };
+
+                    currentEventSource.onerror = function(err) {
+                        appendMessage('error', 'Connection Error: Could not connect to agent stream.', 'System');
                         agentStatusSpan.textContent = 'Error';
                         agentStatusSpan.className = 'status-error';
                         currentEventSource.close();
-                    } else {
-                        appendStyledMessage('unknown', JSON.stringify(data));
-                    }
-                };
-
-                currentEventSource.onerror = function(err) {
-                    console.error('EventSource failed:', err);
-                    appendStyledMessage('error', `Connection Error: ${err.message || 'Could not connect to agent stream.'}`);
-                    agentStatusSpan.textContent = 'Error';
-                    agentStatusSpan.className = 'status-error';
-                    currentEventSource.close();
-                };
+                    };
+                } else {
+                    throw new Error(data.error || 'Failed to start mission.');
+                }
             })
             .catch(error => {
-                console.error('Fetch error:', error);
-                appendStyledMessage('error', `Fetch Error: ${error.message}`);
+                appendMessage('error', `Fetch Error: ${error.message}`, 'System');
                 agentStatusSpan.textContent = 'Error';
                 agentStatusSpan.className = 'status-error';
             });

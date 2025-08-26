@@ -1,8 +1,10 @@
+import json
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, List
 
 from plugins_folder.agent_core import SpecialistAgent  # Import SpecialistAgent
+from project_state import ProjectState
 
 logger = logging.getLogger(__name__)
 
@@ -108,15 +110,105 @@ class DelegateToSpecialistTool(BaseTool):
     def name(self) -> str:
         return "DelegateToSpecialistTool"
 
-    async def execute(self, mission_prompt: str) -> dict:
+    async def execute(self, query: str) -> dict:
+        try:
+            data = json.loads(query)
+            mission_prompt = data.get("mission_prompt")
+            log_id = data.get("log_id")
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON format for DelegateToSpecialistTool. Expected a JSON string with 'mission_prompt' and 'log_id'.")
+
         logger.info(f"DelegateToSpecialistTool delegating mission: {mission_prompt}")
-        # Assuming log_id is managed by the orchestrator or passed down
-        # For simplicity, we'll use a placeholder log_id here. In a real system,
-        # this would need to be properly managed to link specialist logs to orchestrator logs.
         # The update_callback is passed down to the specialist so its thoughts are streamed.
         result = await self.specialist_agent.run(
             mission_prompt,
-            log_id=1,
+            log_id=log_id,
             update_callback=self.specialist_agent.update_callback,
         )
         return result
+
+class WriteToSharedStateTool(BaseTool):
+    def __init__(self, project_state: ProjectState):
+        self._project_state = project_state
+
+    @property
+    def name(self) -> str:
+        return "WriteToSharedStateTool"
+
+    async def execute(self, query: str):
+        """
+        Writes a key-value pair to the shared project state.
+        Expects a JSON string with 'key' and 'value'.
+        e.g., '{"key": "research_notes", "value": "These are the notes..."}'
+        """
+        try:
+            data = json.loads(query)
+            key = data.get("key")
+            value = data.get("value")
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON format for WriteToSharedStateTool. Expected a JSON string with 'key' and 'value'.")
+
+        if not key:
+            raise ValueError("Missing 'key' in data for WriteToSharedStateTool.")
+        logger.info(f"Writing to shared state: key='{key}'")
+        self._project_state.update_state(key, value)
+        return f"Successfully wrote to shared state with key '{key}'."
+
+class ReadFromSharedStateTool(BaseTool):
+    def __init__(self, project_state: ProjectState):
+        self._project_state = project_state
+
+    @property
+    def name(self) -> str:
+        return "ReadFromSharedStateTool"
+
+    async def execute(self, key: str):
+        """
+        Reads a value from the shared project state by key.
+        """
+        logger.info(f"Reading from shared state: key='{key}'")
+        value = self._project_state.get_state(key)
+        if value is None:
+            return f"No value found for key '{key}' in shared state."
+        # If the value is complex (dict, list), it should be serialized to be returned.
+        # The agent framework should handle this, but good to be mindful.
+        if isinstance(value, (dict, list)):
+            return json.dumps(value)
+        return value
+
+class SendClarificationTool(BaseTool):
+    def __init__(self, project_state: ProjectState):
+        self._project_state = project_state
+
+    @property
+    def name(self) -> str:
+        return "SendClarificationTool"
+
+    async def execute(self, query: str):
+        """
+        Sends a clarification question to the orchestrator.
+        """
+        logger.info(f"Sending clarification to orchestrator: {query}")
+        self._project_state.update_state("clarification_for_orchestrator", query)
+        return "Successfully sent clarification to orchestrator."
+
+class CheckForClarificationsTool(BaseTool):
+    def __init__(self, project_state: ProjectState):
+        self._project_state = project_state
+
+    @property
+    def name(self) -> str:
+        return "CheckForClarificationsTool"
+
+    async def execute(self, query: str):
+        """
+        Checks for clarifications from specialists.
+        """
+        logger.info(f"Checking for clarifications from specialists.")
+        clarification = self._project_state.get_state("clarification_for_orchestrator")
+        if clarification:
+            # Clear the clarification after reading it
+            self._project_state.update_state("clarification_for_orchestrator", None)
+            return f"Clarification from specialist: {clarification}"
+        else:
+            return "No clarifications from specialists."

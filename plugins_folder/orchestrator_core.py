@@ -11,6 +11,7 @@ from plugins_folder.tools import (
 )
 from prompts import AGENT_CONSTITUTION  # Orchestrator will also use a constitution
 from utils import sql_connection_context
+from project_state import ProjectState
 
 
 def get_utc_timestamp():
@@ -29,6 +30,7 @@ class OrchestratorAgent:
         tool_registry: ToolRegistry,
         llm_client: LLMClient,
         update_callback: Optional[Callable] = None,
+        project_state: Optional[ProjectState] = None,
     ):
         self.agent_id = agent_id
         self.name = name
@@ -38,6 +40,7 @@ class OrchestratorAgent:
         self.scratchpad = []
         self.llm = llm_client
         self.update_callback = update_callback
+        self.project_state = project_state
 
     @classmethod
     async def load_from_db(
@@ -46,6 +49,7 @@ class OrchestratorAgent:
         tool_registry: ToolRegistry,
         llm_client: LLMClient,
         update_callback: Optional[Callable] = None,
+        project_state: Optional[ProjectState] = None,
     ):
         async with sql_connection_context() as (sql_server_conn, cursor):
             if cursor is None:
@@ -62,7 +66,7 @@ class OrchestratorAgent:
             if row:
                 agent_id, name, role, bdi_state_json = row
                 agent = cls(
-                    agent_id, name, role, tool_registry, llm_client, update_callback
+                    agent_id, name, role, tool_registry, llm_client, update_callback, project_state
                 )
                 if bdi_state_json:
                     agent.bdi_state = json.loads(bdi_state_json)
@@ -125,7 +129,7 @@ class OrchestratorAgent:
 
         if self.update_callback:
             await self.update_callback(
-                {"type": "orchestrator_mission_start", "content": mission_prompt}
+                {"type": "orchestrator_mission_start", "content": mission_prompt, "agent_name": self.name}
             )
 
         for step in range(10):  # Max 10 steps for the cognitive loop
@@ -150,6 +154,7 @@ class OrchestratorAgent:
                     {
                         "type": "orchestrator_thought_process",
                         "content": f"Step {step}: Reasoning...",
+                        "agent_name": self.name,
                     }
                 )
 
@@ -177,8 +182,11 @@ class OrchestratorAgent:
                 self.scratchpad.append(f"Thought: {thought}")
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "orchestrator_thought", "content": thought}
+                        {"type": "orchestrator_thought", "content": thought, "agent_name": self.name}
                     )
+
+                if tool_name == "DelegateToSpecialistTool":
+                    query_for_tool = json.dumps({"mission_prompt": query_for_tool, "log_id": log_id})
 
                 if tool_name == "FinishTool":
                     final_answer = query_for_tool
@@ -188,6 +196,7 @@ class OrchestratorAgent:
                             {
                                 "type": "orchestrator_final_answer",
                                 "content": final_answer,
+                                "agent_name": self.name,
                             }
                         )
                     break
@@ -200,6 +209,7 @@ class OrchestratorAgent:
                             {
                                 "type": "orchestrator_action",
                                 "content": {"tool": tool_name, "query": query_for_tool},
+                                "agent_name": self.name,
                             }
                         )
 
@@ -214,7 +224,7 @@ class OrchestratorAgent:
                     self.scratchpad.append(observation)
                     if self.update_callback:
                         await self.update_callback(
-                            {"type": "orchestrator_observation", "content": observation}
+                            {"type": "orchestrator_observation", "content": observation, "agent_name": self.name}
                         )
 
                     self.bdi_state["beliefs"].update(
@@ -230,7 +240,7 @@ class OrchestratorAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "orchestrator_error", "content": error_message}
+                        {"type": "orchestrator_error", "content": error_message, "agent_name": self.name}
                     )
                 break
             except ValueError as e:
@@ -239,7 +249,7 @@ class OrchestratorAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "orchestrator_error", "content": error_message}
+                        {"type": "orchestrator_error", "content": error_message, "agent_name": self.name}
                     )
                 break
             except Exception as e:
@@ -248,7 +258,7 @@ class OrchestratorAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "orchestrator_error", "content": error_message}
+                        {"type": "orchestrator_error", "content": error_message, "agent_name": self.name}
                     )
                 break
 
@@ -292,10 +302,11 @@ async def create_orchestrator_agent(
     tool_registry: ToolRegistry,
     llm_client: LLMClient,
     update_callback: Optional[Callable] = None,
+    project_state: Optional[ProjectState] = None,
 ) -> OrchestratorAgent:
     """
     Creates and returns an OrchestratorAgent instance.
     """
     return OrchestratorAgent(
-        agent_id, name, role, tool_registry, llm_client, update_callback
+        agent_id, name, role, tool_registry, llm_client, update_callback, project_state
     )

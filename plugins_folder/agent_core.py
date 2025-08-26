@@ -10,6 +10,7 @@ from plugins_folder.tools import (
 )  # Assuming ToolRegistry is in plugins_folder/tools.py
 from prompts import AGENT_CONSTITUTION
 from utils import sql_connection_context
+from project_state import ProjectState
 
 
 def get_utc_timestamp():
@@ -28,6 +29,7 @@ class SpecialistAgent:
         tool_registry,
         llm_client: LLMClient,
         update_callback: Optional[Callable] = None,
+        project_state: Optional[ProjectState] = None,
     ):
         self.agent_id = agent_id
         self.name = name
@@ -37,6 +39,7 @@ class SpecialistAgent:
         self.scratchpad = []  # Initialize scratchpad as an empty list
         self.llm = llm_client  # Store the LLMClient instance
         self.update_callback = update_callback  # Store the update callback
+        self.project_state = project_state
 
     @classmethod
     async def load_from_db(
@@ -45,6 +48,7 @@ class SpecialistAgent:
         tool_registry,
         llm_client: LLMClient,
         update_callback: Optional[Callable] = None,
+        project_state: Optional[ProjectState] = None,
     ):
         async with sql_connection_context() as (sql_server_conn, cursor):
             if cursor is None:
@@ -61,7 +65,7 @@ class SpecialistAgent:
             if row:
                 agent_id, name, role, bdi_state_json = row
                 agent = cls(
-                    agent_id, name, role, tool_registry, llm_client, update_callback
+                    agent_id, name, role, tool_registry, llm_client, update_callback, project_state
                 )
                 if bdi_state_json:
                     agent.bdi_state = json.loads(bdi_state_json)
@@ -126,7 +130,7 @@ class SpecialistAgent:
 
         if self.update_callback:
             await self.update_callback(
-                {"type": "mission_start", "content": mission_prompt}
+                {"type": "mission_start", "content": mission_prompt, "agent_name": self.name}
             )
 
         for step in range(10):  # Max 10 steps for the cognitive loop
@@ -152,7 +156,7 @@ class SpecialistAgent:
 
             if self.update_callback:
                 await self.update_callback(
-                    {"type": "thought_process", "content": f"Step {step}: Reasoning..."}
+                    {"type": "thought_process", "content": f"Step {step}: Reasoning...", "agent_name": self.name}
                 )
 
             # c. Call self.llm.invoke(prompt) to get the agent's next thought and action.
@@ -179,7 +183,7 @@ class SpecialistAgent:
 
                 self.scratchpad.append(f"Thought: {thought}")
                 if self.update_callback:
-                    await self.update_callback({"type": "thought", "content": thought})
+                    await self.update_callback({"type": "thought", "content": thought, "agent_name": self.name})
 
                 # e. Act: If the chosen tool is FinishTool, break the loop and return the result.
                 if tool_name == "FinishTool":
@@ -187,7 +191,7 @@ class SpecialistAgent:
                     self.scratchpad.append(f"Final Answer: {final_answer}")
                     if self.update_callback:
                         await self.update_callback(
-                            {"type": "final_answer", "content": final_answer}
+                            {"type": "final_answer", "content": final_answer, "agent_name": self.name}
                         )
                     break
                 else:
@@ -199,6 +203,7 @@ class SpecialistAgent:
                             {
                                 "type": "action",
                                 "content": {"tool": tool_name, "query": query_for_tool},
+                                "agent_name": self.name,
                             }
                         )
 
@@ -214,7 +219,7 @@ class SpecialistAgent:
                     self.scratchpad.append(observation)
                     if self.update_callback:
                         await self.update_callback(
-                            {"type": "observation", "content": observation}
+                            {"type": "observation", "content": observation, "agent_name": self.name}
                         )
 
                     # Update BDI state (beliefs, desires, intentions can be updated based on tool results)
@@ -231,7 +236,7 @@ class SpecialistAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "error", "content": error_message}
+                        {"type": "error", "content": error_message, "agent_name": self.name}
                     )
                 break
             except ValueError as e:
@@ -240,7 +245,7 @@ class SpecialistAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "error", "content": error_message}
+                        {"type": "error", "content": error_message, "agent_name": self.name}
                     )
                 break
             except Exception as e:
@@ -249,7 +254,7 @@ class SpecialistAgent:
                 logger.error(error_message)
                 if self.update_callback:
                     await self.update_callback(
-                        {"type": "error", "content": error_message}
+                        {"type": "error", "content": error_message, "agent_name": self.name}
                     )
                 break
 
@@ -288,10 +293,11 @@ async def create_specialist_agent(
     tool_registry,
     llm_client: LLMClient,
     update_callback: Optional[Callable] = None,
+    project_state: Optional[ProjectState] = None,
 ) -> SpecialistAgent:
     """
     Creates and returns an Agent instance.
     """
     return SpecialistAgent(
-        agent_id, name, role, tool_registry, llm_client, update_callback
+        agent_id, name, role, tool_registry, llm_client, update_callback, project_state
     )
