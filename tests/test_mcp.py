@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from llm_connector import LLMClient
-from plugins_folder.agent_core import SpecialistAgent, create_specialist_agent
+from plugins_folder.agent_core import SpecialistAgent, create_agent
 from plugins_folder.orchestrator_core import (
     OrchestratorAgent,
     create_orchestrator_agent,
@@ -99,7 +99,7 @@ async def test_mcp_streaming_orchestrator_delegation_success(
     # Mock agent creation/loading
     with (
         patch(
-            "plugins_folder.agent_core.SpecialistAgent.load_from_db",
+            "plugins_folder.agent_core.create_agent",
             AsyncMock(return_value=mock_specialist_agent_instance),
         ),
         patch(
@@ -110,7 +110,6 @@ async def test_mcp_streaming_orchestrator_delegation_success(
             "plugins.call_plugin",
             AsyncMock(
                 side_effect=[
-                    mock_specialist_agent_instance,  # For create_specialist_agent
                     AsyncMock(spec=OrchestratorAgent),  # For create_orchestrator_agent
                 ]
             ),
@@ -178,7 +177,7 @@ async def test_mcp_streaming_error_handling(
 
     with (
         patch(
-            "plugins_folder.agent_core.SpecialistAgent.load_from_db",
+            "plugins_folder.agent_core.create_agent",
             AsyncMock(return_value=mock_specialist_agent_instance),
         ),
         patch(
@@ -189,7 +188,6 @@ async def test_mcp_streaming_error_handling(
             "plugins.call_plugin",
             AsyncMock(
                 side_effect=[
-                    mock_specialist_agent_instance,  # For create_specialist_agent
                     AsyncMock(spec=OrchestratorAgent),  # For create_orchestrator_agent
                 ]
             ),
@@ -257,7 +255,7 @@ async def test_mcp_streaming_orchestrator_load_from_db(
     # Mock agent creation/loading to return the existing orchestrator
     with (
         patch(
-            "plugins_folder.agent_core.SpecialistAgent.load_from_db",
+            "plugins_folder.agent_core.create_agent",
             AsyncMock(return_value=mock_specialist_agent_instance),
         ),
         patch(
@@ -268,7 +266,6 @@ async def test_mcp_streaming_orchestrator_load_from_db(
             "plugins.call_plugin",
             AsyncMock(
                 side_effect=[
-                    mock_specialist_agent_instance,  # For create_specialist_agent (if called)
                     mock_existing_orchestrator,  # For create_orchestrator_agent (if called)
                 ]
             ),

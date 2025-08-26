@@ -5,7 +5,8 @@ import pytest
 
 from llm_connector import LLMClient
 from plugins_folder.agent_core import SpecialistAgent
-from plugins_folder.tools import FinishTool, RAGTool, ToolRegistry, TreeOfThoughtTool
+from plugins_folder.tools import (FinishTool, RAGTool, ToolRegistry,
+                                  TreeOfThoughtTool)
 from utils import sql_connection_context
 
 

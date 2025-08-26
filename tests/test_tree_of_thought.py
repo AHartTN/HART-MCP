@@ -129,14 +129,16 @@ def test_select_best_thought():
 
 
 # --- Tests for initiate_tree_of_thought ---
-def test_initiate_tree_of_thought(mock_sql_server_connection, mock_generate_response):
+@pytest.mark.asyncio
+async def test_initiate_tree_of_thought(mock_sql_server_connection, mock_generate_response):
     mock_conn, mock_cursor = mock_sql_server_connection
     mock_cursor.lastrowid = 1  # Simulate a new log_id from lastrowid
 
     initial_query = "test problem"
     agent_id = 1
 
-    root_thought = initiate_tree_of_thought(initial_query, agent_id)
+    with patch("tree_of_thought.expand_thought_tree", new=AsyncMock(return_value=None)):
+        root_thought = await initiate_tree_of_thought(initial_query, agent_id)
 
     assert root_thought is not None
     assert root_thought.text == initial_query
@@ -150,7 +152,6 @@ def test_initiate_tree_of_thought(mock_sql_server_connection, mock_generate_resp
         json.dumps({"root": initial_query}),
     )
     assert mock_conn.commit.call_count >= 1
-    # Connection close is not enforced in code, so do not assert
 
 
 def test_initiate_tree_of_thought_connection_failure():

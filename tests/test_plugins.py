@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from llm_connector import LLMClient
 from plugins import call_plugin, list_plugins, load_plugins, register_plugin
-from plugins_folder.agent_core import SpecialistAgent, create_specialist_agent
+from plugins_folder.agent_core import SpecialistAgent, create_agent
 from plugins_folder.orchestrator_core import (
     OrchestratorAgent,
     create_orchestrator_agent,
@@ -118,10 +118,10 @@ async def test_delegate_to_specialist_tool_execute(mock_specialist_agent_instanc
 
 # --- Tests for plugin system with new agents ---
 @pytest.mark.asyncio
-async def test_create_specialist_agent_plugin(mock_llm_client):
-    # Mock sql_connection_context for load_from_db inside create_specialist_agent
+async def test_create_agent_plugin(mock_llm_client):
+    # Mock sql_connection_context for load_from_db inside create_agent
     with patch("utils.sql_connection_context", AsyncMock()):
-        agent = await create_specialist_agent(
+        agent = await create_agent(
             1, "TestSpecialist", "Specialist", ToolRegistry(), mock_llm_client
         )
         assert isinstance(agent, SpecialistAgent)

@@ -286,7 +286,7 @@ class SpecialistAgent:
         return {"final_response": final_answer}
 
 
-async def create_specialist_agent(
+async def create_agent(
     agent_id: int,
     name: str,
     role: str,
@@ -294,10 +294,10 @@ async def create_specialist_agent(
     llm_client: LLMClient,
     update_callback: Optional[Callable] = None,
     project_state: Optional[ProjectState] = None,
-) -> SpecialistAgent:
+) -> "SpecialistAgent":
     """
     Creates and returns an Agent instance.
     """
-    return SpecialistAgent(
-        agent_id, name, role, tool_registry, llm_client, update_callback, project_state
+    return await SpecialistAgent.load_from_db(
+        agent_id, tool_registry, llm_client, update_callback, project_state
     )

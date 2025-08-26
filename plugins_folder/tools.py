@@ -3,7 +3,6 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Dict, List
 
-from plugins_folder.agent_core import SpecialistAgent  # Import SpecialistAgent
 from project_state import ProjectState
 
 logger = logging.getLogger(__name__)
@@ -26,6 +25,9 @@ class ToolRegistry:
 
     def register_tool(self, tool: BaseTool):
         self._tools[tool.name] = tool
+
+    def get_tool_names(self) -> List[str]:
+        return list(self._tools.keys())
 
     async def use_tool(self, tool_name: str, query: str):
         tool = self._tools.get(tool_name)
@@ -103,8 +105,9 @@ class FinishTool(BaseTool):
 
 
 class DelegateToSpecialistTool(BaseTool):
-    def __init__(self, specialist_agent: SpecialistAgent):
-        self.specialist_agent = specialist_agent
+    def __init__(self, specialist_agent):
+        from plugins_folder.agent_core import SpecialistAgent
+        self.specialist_agent: SpecialistAgent = specialist_agent
 
     @property
     def name(self) -> str:

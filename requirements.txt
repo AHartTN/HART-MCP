@@ -29,3 +29,4 @@ fastapi
 uvicorn[standard]
 pydantic
 aiofiles
+google-generativeai
