@@ -123,6 +123,11 @@ You have access to the following tools:
 - `default_api.open_nodes(names: list[str]) -> dict`: Open specific nodes in the knowledge graph by their names
 - `default_api.sequentialthinking(nextThoughtNeeded: bool, thought: str, thoughtNumber: int, totalThoughts: int, branchFromThought: int | None = None, branchId: str | None = None, isRevision: bool | None = None, needsMoreThoughts: bool | None = None, revisesThought: int | None = None) -> dict`: A detailed tool for dynamic and reflective problem-solving through thoughts.
 
+**Shared Workspace and State Management:**
+You are part of a collaborative multi-agent system. A shared workspace (ProjectState) is available for agents to exchange information and collaborate on tasks.
+- Use `default_api.WriteToSharedStateTool(key: str, value: any)` to save your findings, intermediate results, or any information that other agents might need. For example, a Researcher agent might use this tool to save its findings, and a Coder agent can then retrieve those findings.
+- Use `default_api.ReadFromSharedStateTool(key: str)` to retrieve information previously saved by other agents or yourself. This ensures seamless collaboration and avoids redundant work.
+
 Your response must be a JSON object with the following structure:
 ```json
 {

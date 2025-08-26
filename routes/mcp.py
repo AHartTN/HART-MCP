@@ -28,7 +28,7 @@ mcp_router = APIRouter()
 # In-memory storage for mission queues. A more robust solution would use Redis or a similar message broker.
 mission_queues = {}
 
-async def run_agent_mission(query: str, agent_id: int, mission_id: str):
+async def run_agent_mission(query: str, agent_id: int, mission_id: str, project_state: ProjectState):
     """This function runs the agent mission in the background."""
     update_queue = mission_queues.get(mission_id)
     if not update_queue:
@@ -58,7 +58,6 @@ async def run_agent_mission(query: str, agent_id: int, mission_id: str):
 
         # Agent and tool setup
         llm_client = LLMClient()
-        project_state = ProjectState()
 
         specialist_tool_registry = ToolRegistry()
         specialist_tool_registry.register_tool(RAGTool())
@@ -129,10 +128,11 @@ async def mcp(validated_data: MCPSchema, background_tasks: BackgroundTasks):
     query = validated_data.query
     agent_id = validated_data.agent_id
     mission_id = str(uuid.uuid4())
+    project_state = ProjectState()
 
     mission_queues[mission_id] = asyncio.Queue()
 
-    background_tasks.add_task(run_agent_mission, query, agent_id, mission_id)
+    background_tasks.add_task(run_agent_mission, query, agent_id, mission_id, project_state)
 
     return JSONResponse({"mission_id": mission_id})
 

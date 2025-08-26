@@ -58,17 +58,17 @@ class SpecialistAgent:
 
             await asyncio.to_thread(
                 cursor.execute,
-                "SELECT AgentID, Name, Role, BDIState FROM Agents WHERE AgentID = ?",
+                "SELECT AgentID, Name, Role FROM Agents WHERE AgentID = ?",
                 agent_id,
             )
             row = await asyncio.to_thread(cursor.fetchone)
             if row:
-                agent_id, name, role, bdi_state_json = row
+                agent_id, name, role = row
                 agent = cls(
                     agent_id, name, role, tool_registry, llm_client, update_callback, project_state
                 )
-                if bdi_state_json:
-                    agent.bdi_state = json.loads(bdi_state_json)
+                # BDIState is part of AgentLogs, not Agents table. Initialize empty.
+                agent.bdi_state = {"beliefs": {}, "desires": [], "intentions": []}
                 return agent
             else:
                 return None
