@@ -31,7 +31,7 @@ def search_milvus(
         collection_name=collection_name,
         data=[query_embedding],
         anns_field="embedding",
-        param=search_params,
+        search_params=search_params,
         limit=5,
         output_fields=["document_id", "text"],
     )
@@ -88,17 +88,10 @@ async def search_neo4j(neo4j_driver, query: str) -> List[str]:
         return []  # Return empty list if driver is not available
 
     try:
-        # Neo4j session and run are blocking, so run in a thread
-        session = await asyncio.to_thread(neo4j_driver.session)
-        try:
-            result = await asyncio.to_thread(
-                session.run,
-                SEARCH_NODES_CONTAINS_TEXT,
-                query=query,
-            )
-            return [record["text"] for record in result]
-        finally:
-            await asyncio.to_thread(session.close)  # Close session in a thread
+        async with neo4j_driver.session() as session:
+            result = await session.run(SEARCH_NODES_CONTAINS_TEXT, {"query": query})
+            records = await result.data()
+            return [record["text"] for record in records]
     except (RuntimeError, ValueError, TypeError) as e:
         logger.error(
             (
@@ -149,7 +142,7 @@ async def search_sql_server_async(
             )
             return []
     try:
-        async with sql_connection_context(sql_server_conn) as (
+        async with sql_connection_context() as (
             conn,
             cursor,
         ):
@@ -164,7 +157,6 @@ async def search_sql_server_async(
                 execute_sql_query,
                 cursor,
                 DOCUMENT_SELECT_VECTOR,
-                (json.dumps(query_embedding),),
             )
             results = await asyncio.to_thread(cursor.fetchall)
             return [

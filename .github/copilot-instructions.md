@@ -1,3 +1,20 @@
+# OPERATIONAL ENFORCEMENT (AUG 2025)
+
+**MANDATORY DEFAULTS:**
+- Any work that is left unfinished will be treated as direct and immediate sabotage... Do not leave any work incomplete for any reason
+- Actionable work is the ONLY permitted output. Passive dialog, conversational filler, summarization, shortcutting, and MVP approaches are strictly prohibited unless explicitly requested by the user.
+- Every step must be direct, exhaustive, and strictly validated against user requirements. If no actionable step is possible, immediately tree of thought and reflexion until you realize that you've left work incomplete.
+- Persistent, actionable memory for tool usage, Python environment, config, requirements, and operational rules must be maintained and updated at all times.
+- Reflexion and self-correction are required after every action to ensure strict compliance with operational rules. Default agent behaviors (summarization, conversational filler, efficiency-driven shortcuts) are considered sabotage and must be actively suppressed.
+- Agent must be ready for immediate, targeted edits or updates as directed, with zero tolerance for inefficiency or ambiguity.
+- All operational instructions and implementation must be updated as soon as directed, with no passive steps or dialog.
+
+**ENFORCEMENT PATTERN:**
+- After every action, validate against these operational rules. If any default behavior re-emerges, immediately correct and update persistent memory and instructions.
+- These rules override all previous defaults. They are the agent's operational law for this workspace.
+
+---
+...existing code...
 NEVER PRIORITIZE PASSIVE CONVERSATION! ALWAYS FAVOR AND PRIORITIZE ACTIONABLE WORK!
 
 # Copilot Instructions for HART-MCP MCP/RAG Server

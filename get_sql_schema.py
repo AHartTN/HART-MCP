@@ -1,4 +1,3 @@
-
 import pyodbc
 import os
 import json
@@ -23,6 +22,7 @@ SQL_SERVER_CONNECTION_STRING = (
     "TrustServerCertificate=yes;"
 )
 
+
 def get_schema():
     schema_info = {}
     try:
@@ -30,24 +30,34 @@ def get_schema():
             cursor = cnxn.cursor()
 
             # Get table names
-            cursor.execute("SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
+            cursor.execute(
+                "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'"
+            )
             tables = cursor.fetchall()
-            
+
             for table_schema, table_name in tables:
                 schema_info[f"{table_schema}.{table_name}"] = []
                 # Get column details for each table
-                cursor.execute(f"SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{table_schema}' AND TABLE_NAME = '{table_name}' ORDER BY ORDINAL_POSITION")
+                cursor.execute(
+                    f"SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{table_schema}' AND TABLE_NAME = '{table_name}' ORDER BY ORDINAL_POSITION"
+                )
                 columns = cursor.fetchall()
                 for col_name, data_type, max_length, is_nullable in columns:
-                    schema_info[f"{table_schema}.{table_name}"].append({
-                        "column_name": col_name,
-                        "data_type": data_type,
-                        "character_maximum_length": max_length,
-                        "is_nullable": is_nullable
-                    })
+                    schema_info[f"{table_schema}.{table_name}"].append(
+                        {
+                            "column_name": col_name,
+                            "data_type": data_type,
+                            "character_maximum_length": max_length,
+                            "is_nullable": is_nullable,
+                        }
+                    )
     except Exception as e:
-        schema_info = {"error": str(e), "connection_string": SQL_SERVER_CONNECTION_STRING}
+        schema_info = {
+            "error": str(e),
+            "connection_string": SQL_SERVER_CONNECTION_STRING,
+        }
     return schema_info
+
 
 if __name__ == "__main__":
     schema = get_schema()

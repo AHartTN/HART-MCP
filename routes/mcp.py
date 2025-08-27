@@ -10,11 +10,17 @@ from llm_connector import LLMClient
 from models import MCPSchema
 from plugins_folder.agent_core import SpecialistAgent
 from plugins_folder.orchestrator_core import OrchestratorAgent
-from plugins_folder.tools import (CheckForClarificationsTool,
-                                  DelegateToSpecialistTool, FinishTool,
-                                  RAGTool, ReadFromSharedStateTool,
-                                  SendClarificationTool, ToolRegistry,
-                                  TreeOfThoughtTool, WriteToSharedStateTool)
+from plugins_folder.tools import (
+    CheckForClarificationsTool,
+    DelegateToSpecialistTool,
+    FinishTool,
+    RAGTool,
+    ReadFromSharedStateTool,
+    SendClarificationTool,
+    ToolRegistry,
+    TreeOfThoughtTool,
+    WriteToSharedStateTool,
+)
 from project_state import ProjectState
 from security import get_api_key
 
@@ -44,8 +50,11 @@ async def run_agent_mission(
         # Database logging (robust async context manager)
         # Use async context manager to get the actual connection object
         async with get_sql_server_connection() as conn:
-            from query_utils import (AGENTLOG_INSERT, execute_sql_query,
-                                     sql_server_connection_context)
+            from query_utils import (
+                AGENTLOG_INSERT,
+                execute_sql_query,
+                sql_server_connection_context,
+            )
 
             async with sql_server_connection_context(conn) as (conn, cursor):
                 # Ensure columns match schema: AgentId, QueryContent, ThoughtTree
@@ -64,16 +73,19 @@ async def run_agent_mission(
                 if log_id is None:
                     log_id = 0
 
-        # Agent and tool setup
-        # llm_client = LLMClient() # THIS LINE IS REMOVED
+            # Agent and tool setup
+            # llm_client = LLMClient() # THIS LINE IS REMOVED
 
-        specialist_tool_registry = ToolRegistry()
-        specialist_tool_registry.register_tool(RAGTool())
-        specialist_tool_registry.register_tool(TreeOfThoughtTool())
-        specialist_tool_registry.register_tool(FinishTool())
-        specialist_tool_registry.register_tool(WriteToSharedStateTool(project_state))
-        specialist_tool_registry.register_tool(ReadFromSharedStateTool(project_state))
-        specialist_tool_registry.register_tool(SendClarificationTool(project_state))
+            specialist_tool_registry = ToolRegistry()
+            specialist_tool_registry.register_tool(RAGTool())
+            specialist_tool_registry.register_tool(TreeOfThoughtTool())
+            specialist_tool_registry.register_tool(FinishTool())
+            specialist_tool_registry.register_tool(WriteToSharedStateTool())
+            specialist_tool_registry.register_tool(ReadFromSharedStateTool())
+            specialist_tool_registry.register_tool(SendClarificationTool())
+            from plugins_folder.tools import SQLQueryTool
+
+            specialist_tool_registry.register_tool(SQLQueryTool())
 
         # specialist_agent = await SpecialistAgent.load_from_db(
         #     agent_id=agent_id,
@@ -93,14 +105,12 @@ async def run_agent_mission(
             project_state=project_state,
         )
 
-        delegate_tool = DelegateToSpecialistTool(specialist_agent=specialist_agent)
+        delegate_tool = DelegateToSpecialistTool()
 
         orchestrator_tool_registry = ToolRegistry()
         orchestrator_tool_registry.register_tool(delegate_tool)
         orchestrator_tool_registry.register_tool(FinishTool())
-        orchestrator_tool_registry.register_tool(
-            CheckForClarificationsTool(project_state)
-        )
+        orchestrator_tool_registry.register_tool(CheckForClarificationsTool())
 
         # orchestrator_agent = await OrchestratorAgent.load_from_db(
         #     agent_id=agent_id + 1,  # Placeholder, see reflexion

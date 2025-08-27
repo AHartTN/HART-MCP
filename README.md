@@ -1,4 +1,9 @@
-# HART-MCP: Multi-Agent Asynchronous AI Platform
+# HART-MCP: Production-Ready Multi-Agent AI Platform 🚀
+
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688.svg)](https://fastapi.tiangolo.com)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Core Architectural Overview
 The HART-MCP project operates on a hybrid-host model designed for flexibility and performance. A standalone Windows-hosted SQL Server instance serves as the primary development target for the System of Record (SSoT) and hosts SQL CLR functions. The `mcp-server` itself runs within a Docker container, establishing connections to this SQL Server instance and other networked services such as Milvus and Neo4j. This architecture allows for leveraging the robust capabilities of a dedicated SQL Server environment while maintaining the portability and isolation benefits of containerization for the application logic.

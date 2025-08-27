@@ -1,29 +1,75 @@
-# Stage 1: Build dependencies
+# Multi-stage production-ready Dockerfile for HART-MCP
 FROM python:3.11-slim-bookworm as builder
 
-# Install unixODBC and dependencies for SQL Server (if needed in build stage)
-# Keeping this for now, assuming some dependencies might need it during pip install
-RUN apt-get update &&     apt-get install -y curl apt-transport-https gnupg &&     curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - &&     curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list &&     apt-get update &&     ACCEPT_EULA=Y apt-get install -y msodbcsql18 &&     apt-get install -y unixodbc-dev &&     rm -rf /var/lib/apt/lists/*
+# Install build dependencies and SQL Server ODBC driver
+RUN apt-get update && \
+    apt-get install -y \
+        curl \
+        apt-transport-https \
+        gnupg \
+        gcc \
+        g++ \
+        unixodbc-dev && \
+    curl -sSL https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+    echo "deb [arch=amd64] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list && \
+    apt-get update && \
+    ACCEPT_EULA=Y apt-get install -y msodbcsql18 && \
+    rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /build
 
+# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Stage 2: Final image
+# Final production image
 FROM python:3.11-slim-bookworm
 
-# Install runtime dependencies for SQL Server (if not already installed in base image)
-RUN apt-get update &&     apt-get install -y curl apt-transport-https gnupg &&     curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - &&     curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list &&     apt-get update &&     ACCEPT_EULA=Y apt-get install -y msodbcsql18 &&     apt-get install -y unixodbc-dev &&     rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies
+RUN apt-get update && \
+    apt-get install -y \
+        curl \
+        apt-transport-https \
+        gnupg \
+        unixodbc && \
+    curl -sSL https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+    echo "deb [arch=amd64] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list && \
+    apt-get update && \
+    ACCEPT_EULA=Y apt-get install -y msodbcsql18 && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+# Create non-root user for security
+RUN useradd -m -u 1000 hartuser && \
+    mkdir -p /app /app/logs /app/static && \
+    chown -R hartuser:hartuser /app
 
 WORKDIR /app
 
-# Copy only the installed packages from the builder stage
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+# Copy Python packages from builder
+COPY --from=builder /root/.local /home/hartuser/.local
+ENV PATH=/home/hartuser/.local/bin:$PATH
 
-# Copy the application code
-COPY . .
+# Copy application code with proper ownership
+COPY --chown=hartuser:hartuser . .
 
+# Switch to non-root user
+USER hartuser
+
+# Create necessary directories
+RUN mkdir -p logs
+
+# Expose application port
 EXPOSE 8000
 
-CMD ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Health check for container orchestration
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Production-ready startup command with proper workers and logging
+CMD ["python", "-m", "uvicorn", "server:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "4", \
+     "--access-log", \
+     "--log-level", "info"]

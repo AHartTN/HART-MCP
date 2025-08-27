@@ -1,6 +1,6 @@
 import asyncio
 import threading
-import traceback # Added this import
+import traceback  # Added this import
 from typing import Any, Callable, Optional
 
 
@@ -35,6 +35,7 @@ def run_async_in_thread(
             else:
                 # Log the error if no callback is provided to handle it
                 import logging
+
                 logging.error(f"Error in background async task: {e}", exc_info=True)
 
     thread = threading.Thread(target=task)

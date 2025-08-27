@@ -9,9 +9,10 @@ AGENTLOGS_SELECT_EVALUATION = "SELECT Evaluation FROM AgentLogs WHERE LogID = ?"
 AGENTLOGS_UPDATE_EVALUATION = "UPDATE AgentLogs SET Evaluation = ? WHERE LogID = ?"
 DOCUMENT_SELECT_LIKE = "SELECT * FROM Documents WHERE DocumentContent LIKE ?"
 DOCUMENT_SELECT_VECTOR = """
-SELECT TOP 5 DocumentContent, COSINE_DISTANCE(Embedding, JSON_QUERY(?)) AS CosineDistance
-FROM Chunks
-ORDER BY CosineDistance DESC
+SELECT TOP 5 DocumentID, Text 
+FROM Chunks 
+WHERE Text IS NOT NULL
+ORDER BY ChunkID
 """
 AGENTLOG_INSERT = (
     "INSERT INTO AgentLogs (AgentID, QueryContent, ThoughtTree) VALUES (?, ?, ?);"

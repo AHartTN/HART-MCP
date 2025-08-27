@@ -2,40 +2,140 @@ import asyncio
 import json
 import logging
 import traceback
-from typing import Optional
+from contextlib import asynccontextmanager
+from typing import Optional, Dict, Any
+from functools import wraps
+import time
 
 import pyodbc
-from neo4j import AsyncGraphDatabase, Driver
-from neo4j.exceptions import Neo4jError
-from pymilvus import MilvusClient, MilvusException
+from neo4j import AsyncGraphDatabase, Driver, basic_auth
+from neo4j.exceptions import Neo4jError, ServiceUnavailable, TransientError
+from pymilvus import MilvusClient, MilvusException, connections
 
-from config import (MILVUS_HOST, MILVUS_PASSWORD, MILVUS_PORT, MILVUS_USER,
-                    NEO4J_PASSWORD, NEO4J_URI, NEO4J_USER,
-                    SQL_SERVER_CONNECTION_STRING)
-from query_utils import (AGENTLOGS_SELECT_EVALUATION,
-                         AGENTLOGS_UPDATE_EVALUATION, execute_sql_query)
+from config import (
+    MILVUS_HOST,
+    MILVUS_PASSWORD,
+    MILVUS_PORT,
+    MILVUS_USER,
+    NEO4J_PASSWORD,
+    NEO4J_URI,
+    NEO4J_USER,
+    SQL_SERVER_CONNECTION_STRING,
+)
+from query_utils import (
+    AGENTLOGS_SELECT_EVALUATION,
+    AGENTLOGS_UPDATE_EVALUATION,
+    execute_sql_query,
+)
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Connection pools and state management
+_sql_connection_pool = None
+_neo4j_driver_pool = None
+_milvus_client_pool = None
+
+# Circuit breaker state
+_circuit_breaker_state = {
+    'sql_server': {'failures': 0, 'last_failure': 0, 'state': 'CLOSED'},
+    'neo4j': {'failures': 0, 'last_failure': 0, 'state': 'CLOSED'},
+    'milvus': {'failures': 0, 'last_failure': 0, 'state': 'CLOSED'}
+}
+
+CIRCUIT_BREAKER_THRESHOLD = 5
+CIRCUIT_BREAKER_TIMEOUT = 60  # seconds
+
+
+def circuit_breaker(service_name: str):
+    """Circuit breaker decorator for database operations."""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            state = _circuit_breaker_state[service_name]
+            
+            # Check if circuit is open
+            if state['state'] == 'OPEN':
+                if time.time() - state['last_failure'] > CIRCUIT_BREAKER_TIMEOUT:
+                    state['state'] = 'HALF_OPEN'
+                    logger.info(f"Circuit breaker for {service_name} moved to HALF_OPEN")
+                else:
+                    raise ConnectionError(f"Circuit breaker OPEN for {service_name}")
+            
+            try:
+                result = await func(*args, **kwargs)
+                # Reset on success
+                if state['state'] in ['HALF_OPEN', 'CLOSED']:
+                    state['failures'] = 0
+                    state['state'] = 'CLOSED'
+                return result
+                
+            except Exception as e:
+                state['failures'] += 1
+                state['last_failure'] = time.time()
+                
+                if state['failures'] >= CIRCUIT_BREAKER_THRESHOLD:
+                    state['state'] = 'OPEN'
+                    logger.error(f"Circuit breaker OPEN for {service_name} after {state['failures']} failures")
+                
+                raise e
+                
+        return wrapper
+    return decorator
 
 
 class SQLServerConnectionManager:
-    def __init__(self, connection_string):
+    def __init__(self, connection_string, pool_size: int = 10):
         self.connection_string = connection_string
+        self.pool_size = pool_size
         self.conn = None
+        self._pool = asyncio.Queue(maxsize=pool_size)
+        self._pool_initialized = False
+
+    async def _initialize_pool(self):
+        """Initialize connection pool lazily."""
+        if not self._pool_initialized:
+            for _ in range(self.pool_size):
+                try:
+                    conn = await asyncio.to_thread(pyodbc.connect, self.connection_string)
+                    await self._pool.put(conn)
+                except Exception as e:
+                    logger.error(f"Failed to create SQL Server connection: {e}")
+                    break
+            self._pool_initialized = True
+            logger.info(f"SQL Server connection pool initialized with {self._pool.qsize()} connections")
 
     async def __aenter__(self):
-        loop = asyncio.get_event_loop()
-        self.conn = await loop.run_in_executor(
-            None, pyodbc.connect, self.connection_string
-        )
-        return self.conn
+        await self._initialize_pool()
+        try:
+            self.conn = await asyncio.wait_for(self._pool.get(), timeout=30)
+            return self.conn
+        except asyncio.TimeoutError:
+            raise ConnectionError("Timeout getting connection from SQL Server pool")
+        except Exception as e:
+            logger.error(f"Error getting SQL Server connection: {e}")
+            # Fallback to direct connection
+            self.conn = await asyncio.to_thread(pyodbc.connect, self.connection_string)
+            return self.conn
 
     async def __aexit__(self, exc_type, exc, tb):
         if self.conn:
-            await asyncio.to_thread(self.conn.close)
+            try:
+                if exc_type:
+                    await asyncio.to_thread(self.conn.rollback)
+                else:
+                    await asyncio.to_thread(self.conn.commit)
+                
+                # Return to pool if healthy
+                if not exc_type and self._pool.qsize() < self.pool_size:
+                    await self._pool.put(self.conn)
+                else:
+                    await asyncio.to_thread(self.conn.close)
+            except Exception as e:
+                logger.error(f"Error returning connection to pool: {e}")
+                await asyncio.to_thread(self.conn.close)
 
 
+@circuit_breaker('sql_server')
 def get_sql_server_connection():
     """
     Return an async context manager for SQL Server connection.
@@ -71,7 +171,7 @@ async def get_neo4j_driver() -> Optional[Driver]:
         logger.info("Connecting to Neo4j at %s...", NEO4J_URI)
         driver = AsyncGraphDatabase.driver(
             str(NEO4J_URI),
-            auth=Auth(str(NEO4J_USER), str(NEO4J_PASSWORD)),
+            auth=basic_auth(str(NEO4J_USER), str(NEO4J_PASSWORD)),
         )
         await driver.verify_connectivity()
         logger.info("Successfully connected to Neo4j.")

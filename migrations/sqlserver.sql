@@ -19,7 +19,8 @@ CREATE TABLE Documents
     -- For Windows, use the FILESTREAM attribute for large files. For Linux,
     -- VARBINARY(MAX) is the correct approach as it stores data directly in the table.
     DocumentContent VARBINARY(MAX) FILESTREAM NULL,
-    DocumentContent VARBINARY(MAX) NOT NULL,
+    -- DocumentContent VARBINARY(MAX) NOT NULL,
+    DocumentContent VARBINARY(MAX) FILESTREAM NULL,
     CreatedAt DATETIME DEFAULT GETDATE()
 );
 GO
