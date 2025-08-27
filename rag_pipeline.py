@@ -19,18 +19,39 @@ from query_utils import (
 )
 from utils import milvus_connection_context, neo4j_connection_context
 
+# ...existing code...
+
+
 logger = logging.getLogger(__name__)
 try:
     embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+except ImportError as e:
+    logger.error(
+        (
+            "Failed to import SentenceTransformer: %s\n%s",
+            e,
+            traceback.format_exc(),
+        )
+    )
+    embedding_model = None
 except Exception as e:
-    logger.error(f"Failed to load embedding model: {e}\n{traceback.format_exc()}")
+    logger.error("Failed to load embedding model: %s\n%s", e, traceback.format_exc())
     embedding_model = None
 
 # Initialize LLM pipeline
 try:
     llm_pipeline = pipeline("text-generation", model="distilgpt2")
+except ImportError as e:
+    logger.error(
+        (
+            "Failed to import transformers pipeline: %s\n%s",
+            e,
+            traceback.format_exc(),
+        )
+    )
+    llm_pipeline = None
 except Exception as e:
-    logger.error(f"Failed to load LLM model: {e}\n{traceback.format_exc()}")
+    logger.error("Failed to load LLM model: %s\n%s", e, traceback.format_exc())
     llm_pipeline = None
 
 
@@ -42,7 +63,10 @@ async def _search_milvus(embedding):
         async with milvus_connection_context() as milvus_client:
             if not milvus_client:
                 logging.error(
-                    "Milvus client is not available. Cannot proceed with Milvus search."
+                    (
+                        "Milvus client is not available. Cannot proceed with Milvus "
+                        "search."
+                    )
                 )
                 return []
             # Corrected line: Call search_milvus using asyncio.to_thread
@@ -50,9 +74,13 @@ async def _search_milvus(embedding):
                 search_milvus, milvus_client, embedding, milvus_collection_name
             )
             return results
-    except Exception as e:
-        logging.error(
-            f"An error occurred during Milvus search: {e}\n{traceback.format_exc()}"
+    except (RuntimeError, ValueError, TypeError) as e:
+        logger.error(
+            (
+                "An error occurred during Milvus search: %s\n%s",
+                e,
+                traceback.format_exc(),
+            )
         )
         return []
 
@@ -62,14 +90,21 @@ async def _search_neo4j(query):
         async with neo4j_connection_context() as neo4j_driver:
             if not neo4j_driver:
                 logging.error(
-                    "Neo4j driver is not available. Cannot proceed with Neo4j search."
+                    (
+                        "Neo4j driver is not available. Cannot proceed with Neo4j "
+                        "search."
+                    )
                 )
                 return []
             results = await search_neo4j(neo4j_driver, query)
             return results
-    except Exception as e:
-        logging.error(
-            f"An error occurred during Neo4j search: {e}\n{traceback.format_exc()}"
+    except (RuntimeError, ValueError, TypeError) as e:
+        logger.error(
+            (
+                "An error occurred during Neo4j search: %s\n%s",
+                e,
+                traceback.format_exc(),
+            )
         )
         return []
 
@@ -77,15 +112,22 @@ async def _search_neo4j(query):
 async def _search_sql_server(query, sql_server_conn=None):
     if sql_server_conn is None:
         try:
-            sql_server_conn = await get_sql_server_connection()
-        except Exception as exc:
-            logging.error(
-                f"Failed to get SQL Server connection: {exc}\n{traceback.format_exc()}"
+            sql_server_conn = get_sql_server_connection()
+        except (RuntimeError, ValueError, TypeError) as exc:
+            logger.error(
+                (
+                    "Failed to get SQL Server connection: %s\n%s",
+                    exc,
+                    traceback.format_exc(),
+                )
             )
             return []
     try:
         # Use async with for the context manager
-        async with sql_server_connection_context(sql_server_conn) as (conn, cursor):
+        async with sql_server_connection_context(sql_server_conn) as (
+            conn,
+            cursor,
+        ):
             if not conn:
                 logging.error(
                     "SQL Server connection is not available. "
@@ -95,7 +137,10 @@ async def _search_sql_server(query, sql_server_conn=None):
 
             # Use asyncio.to_thread for blocking cursor operations
             await asyncio.to_thread(
-                execute_sql_query, cursor, DOCUMENT_SELECT_LIKE, (f"%{query}%",)
+                execute_sql_query,
+                cursor,
+                DOCUMENT_SELECT_LIKE,
+                (f"%{query}%",),
             )
             results = await asyncio.to_thread(cursor.fetchall)
             return [
@@ -108,9 +153,13 @@ async def _search_sql_server(query, sql_server_conn=None):
                 )
                 for row in results
             ]
-    except Exception as e:
-        logging.error(
-            f"SQL Server semantic search failed: {e}\n{traceback.format_exc()}"
+    except (RuntimeError, ValueError, TypeError) as e:
+        logger.error(
+            (
+                "SQL Server semantic search failed: %s\n%s",
+                e,
+                traceback.format_exc(),
+            )
         )
         return []
 
@@ -121,8 +170,14 @@ async def get_embedding(text: str) -> Optional[List[float]]:
         try:
             # Corrected line: await the result of to_thread before calling .tolist()
             return (await asyncio.to_thread(embedding_model.encode, text)).tolist()
-        except Exception as e:
-            logger.error(f"Failed to generate embedding: {e}\n{traceback.format_exc()}")
+        except (RuntimeError, ValueError, TypeError) as e:
+            logger.error(
+                (
+                    "Failed to generate embedding: %s\n%s",
+                    e,
+                    traceback.format_exc(),
+                )
+            )
             return None
     return None
 
@@ -154,8 +209,8 @@ def search_milvus(
                     }
                 )
         return extracted_results
-    except Exception as e:
-        logger.error(f"Milvus search failed: {e}\n{traceback.format_exc()}")
+    except (RuntimeError, ValueError, TypeError) as e:
+        logger.error("Milvus search failed: %s\n%s", e, traceback.format_exc())
         return []
 
 
@@ -163,22 +218,27 @@ async def search_neo4j(neo4j_driver, query: str) -> List[str]:
     """Search for relevant nodes in Neo4j."""
     if not neo4j_driver:
         logger.error("Neo4j driver is not available.")
-        return []
-    try:
-        # Neo4j session and run are blocking, so run in a thread
-        session = await asyncio.to_thread(neo4j_driver.session)
         try:
-            result = await asyncio.to_thread(
-                session.run,
-                SEARCH_NODES_CONTAINS_TEXT,
-                query=query,
+            # Neo4j session and run are blocking, so run in a thread
+            session = await asyncio.to_thread(neo4j_driver.session)
+            try:
+                result = await asyncio.to_thread(
+                    session.run,
+                    SEARCH_NODES_CONTAINS_TEXT,
+                    query=query,
+                )
+                return [record["text"] for record in result]
+            finally:
+                await asyncio.to_thread(session.close)  # Close session in a thread
+        except (RuntimeError, ValueError, TypeError) as e:
+            logger.error(
+                (
+                    "Neo4j search failed: %s\n%s",
+                    e,
+                    traceback.format_exc(),
+                )
             )
-            return [record["text"] for record in result]
-        finally:
-            await asyncio.to_thread(session.close)  # Close session in a thread
-    except Exception as e:
-        logger.error(f"Neo4j search failed: {e}\n{traceback.format_exc()}")
-        return []
+            return []
 
 
 async def generate_response(
@@ -237,28 +297,38 @@ async def generate_response(
     except Exception as e:
         sql_server_available = False
         overall_error = f"SQL Server search failed: {e}"
-        logger.error(f"SQL Server search failed: {e}\n{traceback.format_exc()}")
+        logger.error("SQL Server search failed: %s\n%s", e, traceback.format_exc())
     responses["sql_server"] = sql_server_results
     audit_log.append(
         {"source": "sql_server", "query": query, "results": sql_server_results}
     )
 
-    # If all DB connections are unavailable, return error
+    # If all DB connections are unavailable, return error in final_response
     if (
         (not milvus_available or milvus_results == [])
         and (not neo4j_available or neo4j_results == [])
         and (not sql_server_available or sql_server_results == [])
     ):
-        return {"error": "Database connection error."}
+        return {
+            "final_response": "Failed to connect to all databases.",
+            "responses": responses,
+            "audit_log": audit_log,
+            "plugin_results": None,
+        }
 
-    # If there's an overall error, return it immediately
+    # If there's an overall error, return it immediately in final_response
     if overall_error:
-        return {"error": overall_error}
+        return {
+            "final_response": overall_error,
+            "responses": responses,
+            "audit_log": audit_log,
+            "plugin_results": None,
+        }
 
     # Combine retrieved context for LLM
     combined_context = []
     if milvus_results:
-        combined_context.extend([r["text"] for r in milvus_results if r.get("text")] )
+        combined_context.extend([r["text"] for r in milvus_results if r.get("text")])
     if neo4j_results:
         combined_context.extend(neo4j_results)
     if sql_server_results:
@@ -277,17 +347,21 @@ async def generate_response(
         )
         try:
             # Generate text using the LLM pipeline
-            generated_text = (
-                await asyncio.to_thread(
-                    llm_pipeline, prompt, max_new_tokens=100, num_return_sequences=1
-                )
-            )[0]["generated_text"]
+            llm_result = await asyncio.to_thread(
+                llm_pipeline,
+                prompt,
+                max_new_tokens=100,
+                num_return_sequences=1,
+            )
+            generated_text = llm_result[0]["generated_text"]
             # Extract only the answer part
             # if the prompt is included in the output
-            if generated_text.startswith(prompt):
+            if isinstance(generated_text, str) and generated_text.startswith(prompt):
                 final_response_text = generated_text[len(prompt) :].strip()
-            else:
+            elif isinstance(generated_text, str):
                 final_response_text = generated_text.strip()
+            else:
+                final_response_text = str(generated_text)
         except Exception as e:
             logger.error(f"LLM text generation failed: {e}\n{traceback.format_exc()}")
             final_response_text = (
@@ -324,7 +398,7 @@ async def generate_response(
 def run_rag_async(
     query: str,
     context: Optional[Dict[str, Any]] = None,
-    callback: Optional[callable] = None,
+    callback: Optional[Any] = None,
 ):
     """
     Run RAG pipeline in a background thread.

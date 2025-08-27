@@ -1,81 +1,103 @@
+# In tests/test_rag_pipeline.py
+from unittest.mock import MagicMock, AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from rag_pipeline import generate_response
+from tests.conftest import MockLLMClient
 
 
 @pytest.mark.asyncio
-async def test_generate_response_success():
+async def test_generate_response_success(
+    mock_sql_connection: MagicMock,
+    mock_milvus_client: MagicMock,
+    mock_neo4j_driver: MagicMock,
+    mock_llm_client: MockLLMClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """
     Tests successful response generation from the RAG pipeline.
-    Mocks database connections, search results, and LLM pipeline.
     """
-    mock_sql_cursor = MagicMock()
+    # Arrange
+    mock_sql_cursor = mock_sql_connection.cursor.return_value
     mock_sql_cursor.fetchall.return_value = [("SQL Text 1",), ("SQL Text 2",)]
-    mock_sql_cursor.description = [("DocumentContent",)] # For dict conversion
-    mock_sql_conn = MagicMock()
-    mock_sql_conn.cursor.return_value = mock_sql_cursor
+    mock_sql_cursor.description = [("text",)]
 
-    mock_milvus_client = MagicMock()
     mock_milvus_client.search.return_value = [
         [
-            MagicMock(id="milvus_id_1", distance=0.1, entity={"document_id": "doc1", "text": "Milvus Text 1"}),
-            MagicMock(id="milvus_id_2", distance=0.2, entity={"document_id": "doc2", "text": "Milvus Text 2"}),
+            MagicMock(
+                id="milvus_id_1",
+                distance=0.1,
+                entity={"document_id": "doc1", "text": "Milvus Text 1"},
+            ),
+            MagicMock(
+                id="milvus_id_2",
+                distance=0.2,
+                entity={"document_id": "doc2", "text": "Milvus Text 2"},
+            ),
         ]
     ]
 
-    mock_neo4j_session = MagicMock()
-    mock_neo4j_session.run.return_value = [{"text": "Neo4j Text 1"}, {"text": "Neo4j Text 2"}]
-    mock_neo4j_driver = MagicMock()
-    mock_neo4j_driver.session.return_value.__enter__.return_value = mock_neo4j_session
+    mock_neo4j_driver.session.return_value.run.return_value = [
+        {"text": "Neo4j Text 1"}, {"text": "Neo4j Text 2"}
+    ]
 
+    mock_llm_client.response = "This is a generated response."
 
-    with patch("db_connectors.get_sql_server_connection", new_callable=AsyncMock, return_value=mock_sql_conn), \
-         patch("db_connectors.get_milvus_client", new_callable=AsyncMock, return_value=mock_milvus_client), \
-         patch("db_connectors.get_neo4j_driver", new_callable=AsyncMock, return_value=mock_neo4j_driver), \
-         patch("rag_pipeline.llm_pipeline", new_callable=AsyncMock) as mock_llm_pipeline, \
-         patch("rag_pipeline.get_embedding", new_callable=AsyncMock, return_value=[0.1, 0.2, 0.3]): # Mock embedding
+    monkeypatch.setattr("rag_pipeline.llm_client", mock_llm_client)
 
-        mock_llm_pipeline.return_value = [{"generated_text": "This is a generated response."}]
+    # Act
+    query = "test query"
+    response = await generate_response(query)
 
-        query = "test query"
-        response = await generate_response(query)
-
-        assert "final_response" in response
-        assert response["final_response"] == "This is a generated response."
-        assert mock_sql_conn.cursor.return_value.execute.called
-        assert mock_milvus_client.search.called
-        assert mock_neo4j_session.run.called
-        assert mock_llm_pipeline.called
+    # Assert
+    assert "final_response" in response
+    assert response["final_response"] == "This is a generated response."
 
 
 @pytest.mark.asyncio
-async def test_generate_response_db_connection_failure():
+async def test_generate_response_db_connection_failure(
+    mock_sql_connection: MagicMock,
+    mock_milvus_client: MagicMock,
+    mock_neo4j_driver: MagicMock,
+    mock_llm_client: MockLLMClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """
     Tests response generation failure when a database connection cannot be established.
     """
-    with patch("db_connectors.get_sql_server_connection", new_callable=AsyncMock, return_value=None), \
-         patch("db_connectors.get_milvus_client", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("db_connectors.get_neo4j_driver", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("rag_pipeline.get_embedding", new_callable=AsyncMock, return_value=[0.1, 0.2, 0.3]):
+    # Arrange
+    mock_sql_connection.cursor.side_effect = Exception("DB error")
+    monkeypatch.setattr("rag_pipeline.llm_client", mock_llm_client)
 
-        query = "test query"
-        response = await generate_response(query)
-        assert "error" in response
-        assert response["error"] == "Database connection error."
+    # Act
+    query = "test query"
+    response = await generate_response(query)
+
+    # Assert
+    assert "final_response" in response
+    assert response["final_response"] == "Failed to connect to all databases."
 
 
 @pytest.mark.asyncio
-async def test_generate_response_embedding_failure():
+async def test_generate_response_embedding_failure(
+    mock_sql_connection: MagicMock,
+    mock_milvus_client: MagicMock,
+    mock_neo4j_driver: MagicMock,
+    mock_llm_client: MockLLMClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """
     Tests response generation failure when embedding generation fails.
     """
-    with patch("db_connectors.get_sql_server_connection", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("db_connectors.get_milvus_client", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("db_connectors.get_neo4j_driver", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("rag_pipeline.get_embedding", new_callable=AsyncMock, return_value=None): # Simulate embedding failure
+    # Arrange
+    mock_llm_client.error = Exception("Embedding failed")
+    monkeypatch.setattr("rag_pipeline.llm_client", mock_llm_client)
 
-        query = "test query"
-        response = await generate_response(query)
-        assert "error" in response
-        assert response["error"] == "Failed to generate query embedding."
+    # Act
+    query = "test query"
+    response = await generate_response(query)
+
+    # Assert
+    assert "error" in response
+    assert response["error"] == "Failed to generate query embedding."

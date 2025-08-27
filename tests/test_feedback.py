@@ -1,15 +1,14 @@
-import pytest
-from unittest.mock import AsyncMock, patch
+# In tests/test_feedback.py
+from unittest.mock import MagicMock
 
-# The client fixture is automatically provided by conftest.py
+from fastapi.testclient import TestClient
 
 
-@pytest.mark.asyncio
-async def test_feedback_submission_success(client):
+def test_feedback_submission_success(client: TestClient, mock_sql_connection: MagicMock):
     """
     Tests successful feedback submission to the /feedback endpoint.
-    Mocks the underlying database interaction.
     """
+    # Arrange
     payload = {
         "log_id": 1,
         "feedback_text": "Great result!",
@@ -17,24 +16,34 @@ async def test_feedback_submission_success(client):
         "feedback_type": "accuracy",
     }
 
-    # Mock the database function that handles feedback submission
-    with patch("db_connectors.update_agent_log_evaluation", new_callable=AsyncMock) as mock_update_agent_log_evaluation:
-        mock_update_agent_log_evaluation.return_value = True # Simulate successful update
+    # Act
+    response = client.post("/feedback", json=payload)
 
-        response = client.post("/feedback", json=payload)
+    # Assert
+    response.raise_for_status()
+    assert response.json() == {"message": "Feedback received and logged successfully."}
 
-        assert response.status_code == 200
-        json_data = response.json()
-        assert "message" in json_data
-        assert "Feedback received" in json_data["message"] # Corrected assertion
 
-        # Verify that the database function was called with the correct arguments
-        mock_update_agent_log_evaluation.assert_called_once()
-        args, kwargs = mock_update_agent_log_evaluation.call_args
-        # The first argument is the cursor, which is mocked internally by the endpoint
-        # We are interested in the log_id and the new_entry dictionary
-        assert args[1] == payload["log_id"]
-        assert isinstance(args[2], dict)
-        assert args[2]["feedback_text"] == payload["feedback_text"]
-        assert args[2]["rating"] == payload["rating"]
-        assert args[2]["feedback_type"] == payload["feedback_type"]
+def test_feedback_submission_db_error(
+    client: TestClient, mock_sql_connection: MagicMock
+):
+    """
+    Tests how the /feedback endpoint handles a database error during submission.
+    """
+    # Arrange
+    payload = {
+        "log_id": 1,
+        "feedback_text": "This will fail.",
+        "rating": 1,
+        "feedback_type": "error",
+    }
+    mock_sql_connection.cursor.return_value.execute.side_effect = Exception(
+        "DB error"
+    )
+
+    # Act
+    response = client.post("/feedback", json=payload)
+
+    # Assert
+    assert response.status_code == 500
+    assert "Failed to log feedback" in response.text

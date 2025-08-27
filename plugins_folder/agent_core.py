@@ -55,7 +55,7 @@ class SpecialistAgent:
 
             await asyncio.to_thread(
                 cursor.execute,
-                "SELECT AgentID, Name, Role FROM Agents WHERE AgentID = ?", # Removed BDIState
+                "SELECT AgentID, Name, Role FROM Agents WHERE AgentID = ?",  # Removed BDIState
                 agent_id,
             )
             row = await asyncio.to_thread(cursor.fetchone)
@@ -171,7 +171,10 @@ class SpecialistAgent:
                 )
 
             # c. Call self.llm.invoke(prompt) to get the agent's next thought and action.
-            llm_response_text = await self.llm.invoke(llm_prompt)
+            if hasattr(self.llm.invoke, "__await__"):
+                llm_response_text = await self.llm.invoke(llm_prompt)
+            else:
+                llm_response_text = self.llm.invoke(llm_prompt)
             logger.info(f"LLM Raw Response: {llm_response_text}")
 
             try:
@@ -298,7 +301,10 @@ class SpecialistAgent:
 
         # Reflect on the scratchpad and update beliefs
         summary_prompt = "Please summarize the following mission scratchpad, focusing on key actions, observations, and outcomes. This summary will be used to update the agent's long-term beliefs.\n\nScratchpad:\nscratchpad_content_for_summary"
-        mission_summary = await self.llm.invoke(summary_prompt)
+        if hasattr(self.llm.invoke, "__await__"):
+            mission_summary = await self.llm.invoke(summary_prompt)
+        else:
+            mission_summary = self.llm.invoke(summary_prompt)
         logger.info(f"Mission Summary for BDI update: {mission_summary}")
 
         # Update BDI state with the mission summary

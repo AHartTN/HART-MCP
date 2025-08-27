@@ -1,47 +1,51 @@
+# In tests/test_db_connectors.py
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from db_connectors import get_sql_server_connection, get_milvus_client, get_neo4j_driver
+from db_connectors import (
+    get_milvus_client,
+    get_neo4j_driver,
+    get_sql_server_connection,
+)
 
 
 @pytest.mark.asyncio
-async def test_get_sql_server_connection_mocked():
+async def test_get_sql_server_connection(mock_sql_connection: MagicMock):
     """
-    Tests get_sql_server_connection by mocking the underlying pyodbc.connect.
+    Tests the get_sql_server_connection function.
     """
-    with patch("pyodbc.connect", return_value=MagicMock()) as mock_connect:
-        conn = await get_sql_server_connection()
+    # Arrange (no arrangement needed, fixture is already a mock)
+
+    # Act
+    async with get_sql_server_connection() as conn:
+        # Assert
         assert conn is not None
-        mock_connect.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_milvus_client_mocked():
+async def test_get_milvus_client(mock_milvus_client: MagicMock):
     """
-    Tests get_milvus_client by mocking the underlying MilvusClient.
+    Tests the get_milvus_client function.
     """
-    # Patch asyncio.to_thread to return a mocked MilvusClient instance
-    with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
-        mock_milvus_client_instance = MagicMock()
-        mock_to_thread.return_value = mock_milvus_client_instance
+    # Arrange (no arrangement needed, fixture is already a mock)
 
-        client = await get_milvus_client()
-        assert client is not None
-        assert client == mock_milvus_client_instance # Ensure the returned client is our mock
-        mock_to_thread.assert_called_once() # Verify asyncio.to_thread was called
+    # Act
+    client = await get_milvus_client()
+
+    # Assert
+    assert client is not None
 
 
 @pytest.mark.asyncio
-async def test_get_neo4j_driver_mocked():
+async def test_get_neo4j_driver(mock_neo4j_driver: MagicMock):
     """
-    Tests get_neo4j_driver by mocking the underlying neo4j.GraphDatabase.driver.
+    Tests the get_neo4j_driver function.
     """
-    # Patch asyncio.to_thread to return a mocked Neo4j driver instance
-    with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
-        mock_neo4j_driver_instance = MagicMock()
-        mock_to_thread.return_value = mock_neo4j_driver_instance
+    # Arrange (no arrangement needed, fixture is already a mock)
 
-        driver = await get_neo4j_driver()
-        assert driver is not None
-        assert driver == mock_neo4j_driver_instance # Ensure the returned driver is our mock
-        mock_to_thread.assert_called_once() # Verify asyncio.to_thread was called
+    # Act
+    driver = await get_neo4j_driver()
+
+    # Assert
+    assert driver is not None

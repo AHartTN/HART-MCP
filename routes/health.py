@@ -9,7 +9,6 @@ health_router = APIRouter()
 @health_router.get("/health")
 async def health():
     db_status = await check_database_health()
-
     if all(db_status.values()):
         return JSONResponse(
             content={
@@ -29,7 +28,7 @@ async def health():
     else:
         return JSONResponse(
             content={
-                "status": "error",
+                "status": "degraded",
                 "databases": db_status,
             },
             status_code=500,

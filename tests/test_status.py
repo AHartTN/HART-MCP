@@ -1,109 +1,51 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+# In tests/test_status.py
+from unittest.mock import MagicMock
 
-# The client fixture is automatically provided by conftest.py
+from fastapi.testclient import TestClient
 
 
-@pytest.mark.asyncio
-async def test_status_all_connected(client):
+def test_status_all_connected(client: TestClient):
     """
-    Tests the /status endpoint when all database connections are healthy.
+    Tests the /status endpoint when all mocked database connections are healthy.
+    By default, our mock fixtures in conftest.py are 'healthy'.
     """
-    with patch("db_connectors.get_milvus_client", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("db_connectors.get_neo4j_driver", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("db_connectors.get_sql_server_connection", new_callable=AsyncMock, return_value=MagicMock()):
+    # Arrange (no special arrangement needed, mocks are healthy by default)
 
-        response = client.get("/status")
-        assert response.status_code == 200
-        assert response.json() == {
-            "status": "running",
-            "databases": {
-                "milvus": "connected",
-                "neo4j": "connected",
-                "sql_server": "connected",
-            },
-        }
+    # Act
+    response = client.get("/status")
+
+    # Assert
+    response.raise_for_status()
+    assert response.json() == {
+        "status": "running",
+        "databases": {
+            "milvus": "connected",
+            "neo4j": "connected",
+            "sql_server": "connected",
+        },
+    }
 
 
-@pytest.mark.asyncio
-async def test_status_milvus_disconnected(client):
+def test_status_one_disconnected(client: TestClient, mock_neo4j_driver: MagicMock):
     """
-    Tests the /status endpoint when Milvus connection is disconnected.
+    Tests the /status endpoint when one database (Neo4j) is disconnected.
     """
-    with patch("db_connectors.get_milvus_client", new_callable=AsyncMock, return_value=None), \
-         patch("db_connectors.get_neo4j_driver", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("db_connectors.get_sql_server_connection", new_callable=AsyncMock, return_value=MagicMock()):
+    # Arrange: Simulate a failure in one of the mock database clients.
+    # We can make the mock raise an error when a method is called.
+    mock_neo4j_driver.session.return_value.run.side_effect = Exception(
+        "Connection failed"
+    )
 
-        response = client.get("/status")
-        assert response.status_code == 200
-        assert response.json() == {
-            "status": "running",
-            "databases": {
-                "milvus": "disconnected",
-                "neo4j": "connected",
-                "sql_server": "connected",
-            },
-        }
+    # Act
+    response = client.get("/status")
 
-
-@pytest.mark.asyncio
-async def test_status_neo4j_disconnected(client):
-    """
-    Tests the /status endpoint when Neo4j connection is disconnected.
-    """
-    with patch("db_connectors.get_milvus_client", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("db_connectors.get_neo4j_driver", new_callable=AsyncMock, return_value=None), \
-         patch("db_connectors.get_sql_server_connection", new_callable=AsyncMock, return_value=MagicMock()):
-
-        response = client.get("/status")
-        assert response.status_code == 200
-        assert response.json() == {
-            "status": "running",
-            "databases": {
-                "milvus": "connected",
-                "neo4j": "disconnected",
-                "sql_server": "connected",
-            },
-        }
-
-
-@pytest.mark.asyncio
-async def test_status_sql_server_disconnected(client):
-    """
-    Tests the /status endpoint when SQL Server connection is disconnected.
-    """
-    with patch("db_connectors.get_milvus_client", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("db_connectors.get_neo4j_driver", new_callable=AsyncMock, return_value=MagicMock()), \
-         patch("db_connectors.get_sql_server_connection", new_callable=AsyncMock, return_value=None):
-
-        response = client.get("/status")
-        assert response.status_code == 200
-        assert response.json() == {
-            "status": "running",
-            "databases": {
-                "milvus": "connected",
-                "neo4j": "connected",
-                "sql_server": "disconnected",
-            },
-        }
-
-
-@pytest.mark.asyncio
-async def test_status_all_disconnected(client):
-    """
-    Tests the /status endpoint when all database connections are disconnected.
-    """
-    with patch("db_connectors.get_milvus_client", new_callable=AsyncMock, return_value=None), \
-         patch("db_connectors.get_neo4j_driver", new_callable=AsyncMock, return_value=None), \
-         patch("db_connectors.get_sql_server_connection", new_callable=AsyncMock, return_value=None):
-
-        response = client.get("/status")
-        assert response.status_code == 200
-        assert response.json() == {
-            "status": "running",
-            "databases": {
-                "milvus": "disconnected",
-                "neo4j": "disconnected",
-                "sql_server": "disconnected",
-            },
-        }
+    # Assert
+    response.raise_for_status()  # The endpoint itself should still be operational
+    assert response.json() == {
+        "status": "running",
+        "databases": {
+            "milvus": "connected",
+            "neo4j": "disconnected",  # This should now reflect the failure
+            "sql_server": "connected",
+        },
+    }

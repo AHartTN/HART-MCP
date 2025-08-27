@@ -7,8 +7,7 @@ from typing import Callable, Dict, List, Optional
 from llm_connector import LLMClient
 from plugins_folder.tools import ToolRegistry
 from project_state import ProjectState
-from prompts import \
-    AGENT_CONSTITUTION  # Orchestrator will also use a constitution
+from prompts import AGENT_CONSTITUTION  # Orchestrator will also use a constitution
 from utils import sql_connection_context
 
 
@@ -127,7 +126,9 @@ class OrchestratorAgent:
         log_id: int,
         update_callback: Optional[Callable] = None,
     ) -> dict:
-        logger.info(f"OrchestratorAgent {self.name} starting mission: {mission_prompt}")
+        logger.info(
+            "OrchestratorAgent %s starting mission: %s", self.name, mission_prompt
+        )
         self.scratchpad = [f"Mission: {mission_prompt}"]
         final_answer = None
 
@@ -155,7 +156,7 @@ class OrchestratorAgent:
                 "Your next response MUST be a JSON object with two keys: 'thought' (string) and 'action' (object). The 'action' object MUST have two keys: 'tool' (string, name of the tool to use) and 'query' (string, the input for the tool). If you have completed the mission, use the 'FinishTool' and provide the final answer as the query.\n"
                 'Example: {"thought": "I need to delegate this task to a specialist.", "action": {"tool": "DelegateToSpecialistTool", "query": "sub-task for specialist"}}'
             )
-            logger.info(f"LLM Prompt for step {step}:\n{llm_prompt}")
+            logger.info("LLM Prompt for step %s:\n%s", step, llm_prompt)
 
             if self.update_callback:
                 await self.update_callback(
@@ -167,7 +168,7 @@ class OrchestratorAgent:
                 )
 
             llm_response_text = await self.llm.invoke(llm_prompt)
-            logger.info(f"LLM Raw Response: {llm_response_text}")
+            logger.info("LLM Raw Response: %s", llm_response_text)
 
             try:
                 llm_response = json.loads(llm_response_text)
@@ -216,7 +217,9 @@ class OrchestratorAgent:
                     break
                 else:
                     logger.info(
-                        f"Attempting to use tool: {tool_name} with query: {query_for_tool}"
+                        "Attempting to use tool: %s with query: %s",
+                        tool_name,
+                        query_for_tool,
                     )
                     if self.update_callback:
                         await self.update_callback(
@@ -233,7 +236,9 @@ class OrchestratorAgent:
                     observation = (
                         f"Observation: Tool Result ({tool_name}): {tool_result}"
                     )
-                    logger.info(f"Tool '{tool_name}' executed. Result: {tool_result}")
+                    logger.info(
+                        "Tool '%s' executed. Result: %s", tool_name, tool_result
+                    )
 
                     self.scratchpad.append(observation)
                     if self.update_callback:
@@ -303,7 +308,7 @@ class OrchestratorAgent:
 Scratchpad:
 {scratchpad_text}"""
         mission_summary = await self.llm.invoke(summary_prompt)
-        logger.info(f"Orchestrator Mission Summary for BDI update: {mission_summary}")
+        logger.info("Orchestrator Mission Summary for BDI update: %s", mission_summary)
 
         self.bdi_state["beliefs"].update(
             {"last_orchestrator_mission_summary": mission_summary}
@@ -320,7 +325,9 @@ Scratchpad:
         )
 
         logger.info(
-            f"OrchestratorAgent {self.name} completed mission with final answer: {final_answer}"
+            "OrchestratorAgent %s completed mission with final answer: %s",
+            self.name,
+            final_answer,
         )
         return {"final_response": final_answer}
 

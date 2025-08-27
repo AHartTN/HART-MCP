@@ -1,55 +1,74 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+# In tests/test_retrieve.py
+from unittest.mock import AsyncMock, MagicMock
 
-# The client fixture is automatically provided by conftest.py
-import utils # Import utils (still needed for other potential utils functions)
-import rag_pipeline # Import rag_pipeline
+from fastapi.testclient import TestClient
+
+from tests.conftest import MockLLMClient
 
 
-@pytest.mark.asyncio
-async def test_retrieve_success(client):
+def test_retrieve_success(
+    client: TestClient,
+    mock_milvus_client: MagicMock,
+    mock_llm_client: MockLLMClient,
+):
     """
-    Tests successful retrieval from the /retrieve endpoint.
-    Mocks embedding generation and Milvus search.
+    Tests the /retrieve endpoint's happy path.
     """
-    mock_embedding = [0.1, 0.2, 0.3]
-    mock_milvus_results = [{"id": "1", "text": "test result 1"}, {"id": "2", "text": "test result 2"}]
+    # Arrange
+    # 1. Configure the LLM mock to return a simulated embedding.
+    mock_llm_client.response = "[0.1, 0.2, 0.3]"  # Simulate embedding
 
-    with patch("rag_pipeline.get_embedding", new_callable=AsyncMock, return_value=mock_embedding), \
-         patch("rag_pipeline.search_milvus", new_callable=AsyncMock, return_value=mock_milvus_results), \
-         patch("db_connectors.get_milvus_client", new_callable=AsyncMock, return_value=MagicMock()): # Ensure Milvus client is mocked as available
+    # 2. Configure the Milvus mock to return search results.
+    mock_search_results = [
+        {
+            "id": "fake_chunk_id_1",
+            "score": 0.9,
+            "entity": {"text": "This is the first retrieved chunk."},
+        }
+    ]
+    mock_milvus_client.search.return_value = mock_search_results
 
-        response = client.post("/retrieve", json={"query": "test query"})
+    # Act
+    response = client.post("/retrieve", json={"query": "test query"})
 
-        assert response.status_code == 200
-        assert response.json() == {"results": mock_milvus_results}
-        rag_pipeline.get_embedding.assert_called_once_with("test query")
-        rag_pipeline.search_milvus.assert_called_once_with(MagicMock(), mock_embedding)
+    # Assert
+    response.raise_for_status()
+    assert response.json() == {"results": mock_search_results}
 
 
-@pytest.mark.asyncio
-async def test_retrieve_embedding_failure(client):
+def test_retrieve_llm_failure(client: TestClient, mock_llm_client: MockLLMClient):
     """
-    Tests retrieval failure when embedding generation fails.
+    Tests how /retrieve handles a failure during embedding generation.
     """
-    with patch("rag_pipeline.get_embedding", new_callable=AsyncMock, return_value=None): # Simulate embedding failure
-        response = client.post("/retrieve", json={"query": "test query"})
+    # Arrange: Configure the LLM mock to raise an error.
+    mock_llm_client.error = Exception("Embedding model failed")
 
-        assert response.status_code == 500
-        assert response.json() == {"error": "Failed to generate query embedding."}
+    # Act
+    response = client.post("/retrieve", json={"query": "test query"})
+
+    # Assert
+    assert response.status_code == 500
+    assert "Embedding model failed" in response.text
 
 
-@pytest.mark.asyncio
-async def test_retrieve_milvus_connection_failure(client):
+def test_retrieve_milvus_failure(
+    client: TestClient,
+    mock_milvus_client: MagicMock,
+    mock_llm_client: MockLLMClient,
+):
     """
-    Tests retrieval failure when Milvus connection cannot be established.
+    Tests how /retrieve handles a failure during Milvus search.
     """
-    mock_embedding = [0.1, 0.2, 0.3]
+    # Arrange
+    # 1. Configure the LLM mock to return a simulated embedding.
+    mock_llm_client.response = "[0.1, 0.2, 0.3]"  # Simulate embedding
 
-    with patch("rag_pipeline.get_embedding", new_callable=AsyncMock, return_value=mock_embedding), \
-         patch("db_connectors.get_milvus_client", new_callable=AsyncMock, return_value=None): # Simulate Milvus connection failure
+    # 2. Configure the Milvus mock to raise an error.
+    mock_milvus_client.search.side_effect = Exception("Milvus is down")
 
-        response = client.post("/retrieve", json={"query": "test query"})
+    # Act
+    response = client.post("/retrieve", json={"query": "test query"})
 
-        assert response.status_code == 500
-        assert response.json() == {"error": "Failed to connect to Milvus."}
+    # Assert
+    assert response.status_code == 500
+    assert "Milvus is down" in response.text
