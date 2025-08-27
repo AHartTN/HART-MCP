@@ -3,9 +3,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.conftest import MockLLMClient
+from llm_connector import LLMClient
 
 
-def test_mcp_golden_path(client: TestClient, mock_llm_client: MockLLMClient):
+@pytest.mark.asyncio
+async def test_mcp_golden_path(client: TestClient, mock_llm_client: MockLLMClient, monkeypatch: pytest.MonkeyPatch):
     """
     Tests the end-to-end 'golden path' of the /mcp endpoint.
 
@@ -21,30 +23,75 @@ def test_mcp_golden_path(client: TestClient, mock_llm_client: MockLLMClient):
         + """"}}"""
     )
 
+    # Mock LLMClient instantiation within run_agent_mission
+    monkeypatch.setattr(LLMClient, '__new__', lambda cls, *args, **kwargs: mock_llm_client)
+
     # Act: Call the MCP endpoint with a mission.
-    mission_payload = {"prompt": "Test mission"}
+    mission_payload = {"query": "Test mission", "agent_id": 1}
     response = client.post("/mcp", json=mission_payload)
+    response.raise_for_status()
+    mission_id = response.json()["mission_id"]
+
+    # Stream the response from the /stream/{mission_id} endpoint
+    stream_response = client.get(f"/stream/{mission_id}")
+    stream_response.raise_for_status()
 
     # Assert: Verify that the streaming response contains the final answer.
     # This proves the entire agentic loop worked as expected.
-    response.raise_for_status()  # Ensure the request was successful (200 OK)
-    assert final_answer in response.text
+    full_response_text = ""
+    for chunk in stream_response.iter_bytes():
+        full_response_text += chunk.decode("utf-8")
+
+    assert final_answer in full_response_text
 
 
-def test_mcp_llm_error(client: TestClient, mock_llm_client: MockLLMClient):
+@pytest.mark.asyncio
+async def test_mcp_llm_error(client: TestClient, mock_llm_client: MockLLMClient, monkeypatch: pytest.MonkeyPatch):
     """
     Tests how the /mcp endpoint handles an unexpected error from the LLM.
 
     This test ensures the system is resilient and returns a proper HTTP error
     instead of crashing if the agent's 'brain' fails.
     """
-    # Arrange: Configure the mock LLM to raise an exception.
+    # Arrange: Configure the mock LLM to raise an. exception.
     mock_llm_client.error = Exception("LLM service is down")
 
-    # Act: Call the MCP endpoint.
-    mission_payload = {"prompt": "Test mission that will fail"}
-    response = client.post("/mcp", json=mission_payload)
+    # Mock LLMClient instantiation within run_agent_mission
+    monkeypatch.setattr(LLMClient, '__new__', lambda cls, *args, **kwargs: mock_llm_client)
 
-    # Assert: Verify that the server returned an internal server error status code.
-    assert response.status_code == 500
-    assert "LLM service is down" in response.text
+    # Act: Call the MCP endpoint.
+    mission_payload = {"query": "Test mission that will fail"}
+    response = client.post("/mcp", json=mission_payload)
+    response.raise_for_status()
+    mission_id = response.json()["mission_id"]
+
+    # Stream the response from the /stream/{mission_id} endpoint
+    stream_response = client.get(f"/stream/{mission_id}")
+    stream_response.raise_for_status()
+
+    # Assert: Verify that the streaming response contains the error message.
+    full_response_text = ""
+    for chunk in stream_response.iter_bytes():
+        full_response_text += chunk.decode("utf-8")
+
+    assert "LLM service is down" in full_response_text
+
+
+@pytest.mark.asyncio
+async def test_stream_endpoint_isolation(client: TestClient):
+    """
+    Tests the /stream/{mission_id} endpoint in isolation to check for 405 errors.
+    """
+    # Arrange: Use a dummy mission_id
+    dummy_mission_id = "test-mission-id"
+
+    # Act
+    response = client.get(f"/stream/{dummy_mission_id}")
+
+    # Assert
+    # We expect a 200 OK even if the mission is not found, as the endpoint itself should be accessible
+    assert response.status_code == 200
+    full_response_text = ""
+    for chunk in response.iter_bytes():
+        full_response_text += chunk.decode("utf-8")
+    assert "Mission not found" in full_response_text

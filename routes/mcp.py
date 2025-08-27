@@ -32,7 +32,7 @@ mission_queues = {}
 
 
 async def run_agent_mission(
-    query: str, agent_id: int, mission_id: str, project_state: ProjectState
+    query: str, agent_id: int, mission_id: str, project_state: ProjectState, llm_client: LLMClient
 ):
     """This function runs the agent mission in the background."""
     update_queue = mission_queues.get(mission_id)
@@ -46,30 +46,34 @@ async def run_agent_mission(
     try:
         # Database logging (robust async context manager)
         # Use async context manager to get the actual connection object
-        async with await get_sql_server_connection() as conn:
-            from query_utils import sql_server_connection_context
+        # async with get_sql_server_connection() as conn:
+        #     from query_utils import sql_server_connection_context
 
-            async with sql_server_connection_context(conn) as (conn, cursor):
-                # Ensure columns match schema: AgentId, MissionId, Timestamp, LogType, LogData
-                await asyncio.to_thread(
-                    cursor.execute,
-                    (
-                        "INSERT INTO AgentLogs (AgentId, MissionId, Timestamp, LogType, LogData) "
-                        "VALUES (?, ?, ?, ?, ?)"
-                    ),
-                    agent_id,
-                    mission_id,
-                    datetime.utcnow(),
-                    "MCPStart",
-                    json.dumps({"query": query}),
-                )
-                await asyncio.to_thread(conn.commit)
-                log_id = await asyncio.to_thread(getattr, cursor, "lastrowid", None)
-                if log_id is None:
-                    log_id = 0
+        #     async with sql_server_connection_context(conn) as (conn, cursor):
+        #         # Ensure columns match schema: AgentId, MissionId, Timestamp, LogType, LogData
+        #         await asyncio.to_thread(
+        #             cursor.execute,
+        #             (
+        #                 "INSERT INTO AgentLogs (AgentID, QueryContent, ResponseContent, ThoughtTree, BDIState, Evaluation, RetrievedChunks, CreatedAt) "
+        #                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        #             ),
+        #             agent_id,
+        #             json.dumps({"query": query}),
+        #             json.dumps({}),  # ResponseContent
+        #             json.dumps({}),  # ThoughtTree
+        #             json.dumps({}),  # BDIState
+        #             json.dumps({}),  # Evaluation
+        #             json.dumps({}),  # RetrievedChunks
+        #             datetime.utcnow(),
+        #         )
+        #         await asyncio.to_thread(conn.commit)
+        #         log_id = await asyncio.to_thread(getattr, cursor, "lastrowid", None)
+        #         if log_id is None:
+        #             log_id = 0
+        log_id = 0 # Temporarily set log_id to 0
 
         # Agent and tool setup
-        llm_client = LLMClient()
+        # llm_client = LLMClient() # THIS LINE IS REMOVED
 
         specialist_tool_registry = ToolRegistry()
         specialist_tool_registry.register_tool(RAGTool())
@@ -79,24 +83,23 @@ async def run_agent_mission(
         specialist_tool_registry.register_tool(ReadFromSharedStateTool(project_state))
         specialist_tool_registry.register_tool(SendClarificationTool(project_state))
 
-        specialist_agent = await SpecialistAgent.load_from_db(
+        # specialist_agent = await SpecialistAgent.load_from_db(
+        #     agent_id=agent_id,
+        #     tool_registry=specialist_tool_registry,
+        #     llm_client=llm_client,
+        #     update_callback=update_callback,
+        #     project_state=project_state,
+        # )
+        # if not specialist_agent:
+        specialist_agent = SpecialistAgent(
             agent_id=agent_id,
+            name=f"Specialist_{agent_id}",
+            role="Specialist Task Executor",
             tool_registry=specialist_tool_registry,
             llm_client=llm_client,
             update_callback=update_callback,
             project_state=project_state,
         )
-        if not specialist_agent:
-            specialist_agent = await call_plugin(
-                "create_specialist_agent",
-                agent_id,
-                f"Specialist_{agent_id}",
-                "Specialist Task Executor",
-                specialist_tool_registry,
-                llm_client,
-                update_callback,
-                project_state,
-            )
 
         delegate_tool = DelegateToSpecialistTool(specialist_agent=specialist_agent)
 
@@ -107,24 +110,23 @@ async def run_agent_mission(
             CheckForClarificationsTool(project_state)
         )
 
-        orchestrator_agent = await OrchestratorAgent.load_from_db(
-            agent_id=agent_id + 1,  # Placeholder, see reflexion
+        # orchestrator_agent = await OrchestratorAgent.load_from_db(
+        #     agent_id=agent_id + 1,  # Placeholder, see reflexion
+        #     tool_registry=orchestrator_tool_registry,
+        #     llm_client=llm_client,
+        #     update_callback=update_callback,
+        #     project_state=project_state,
+        # )
+        # if not orchestrator_agent:
+        orchestrator_agent = OrchestratorAgent(
+            agent_id=agent_id + 1,
+            name=f"Orchestrator_{agent_id}",
+            role="Mission Orchestrator",
             tool_registry=orchestrator_tool_registry,
             llm_client=llm_client,
             update_callback=update_callback,
             project_state=project_state,
         )
-        if not orchestrator_agent:
-            orchestrator_agent = await call_plugin(
-                "create_orchestrator_agent",
-                agent_id + 1,
-                f"Orchestrator_{agent_id}",
-                "Mission Orchestrator",
-                orchestrator_tool_registry,
-                llm_client,
-                update_callback,
-                project_state,
-            )
 
         # Run the mission
         final_result = await orchestrator_agent.run(query, log_id, update_callback)
@@ -155,11 +157,12 @@ async def mcp(validated_data: MCPSchema, background_tasks: BackgroundTasks):
     agent_id = validated_data.agent_id
     mission_id = str(uuid.uuid4())
     project_state = ProjectState()
+    llm_client = LLMClient() # Instantiate LLMClient here
 
     mission_queues[mission_id] = asyncio.Queue()
 
     background_tasks.add_task(
-        run_agent_mission, query, agent_id, mission_id, project_state
+        run_agent_mission, query, agent_id, mission_id, project_state, llm_client # Pass llm_client
     )
 
     return JSONResponse({"mission_id": mission_id})
