@@ -1,8 +1,13 @@
+import os
+import uuid
+
+import aiofiles
 from fastapi import APIRouter, File, UploadFile, Depends
 from fastapi.responses import JSONResponse
 
-from db_connectors import get_sql_server_connection, insert_document
-from utils import allowed_file, extract_text, logger
+from db_connectors import get_sql_server_connection
+from query_utils import insert_document
+from utils import allowed_file, extract_text
 from security import get_api_key
 
 ingest_router = APIRouter(dependencies=[Depends(get_api_key)])
@@ -10,7 +15,6 @@ ingest_router = APIRouter(dependencies=[Depends(get_api_key)])
 
 @ingest_router.post("/ingest")
 async def ingest_document(file: UploadFile = File(...)):  # noqa: B008
-    # ...existing code...
     if not file.filename or not allowed_file(file.filename):
         return JSONResponse(
             content={"error": "File type not allowed"},
@@ -32,12 +36,12 @@ async def ingest_document(file: UploadFile = File(...)):  # noqa: B008
             try:
                 conn = await conn_manager.__aenter__()
             except Exception as inner_e:
-                raise Exception(str(inner_e))
+                raise Exception(str(inner_e)) from inner_e
         elif hasattr(conn_manager, "__enter__"):
             try:
                 conn = conn_manager.__enter__()
             except Exception as inner_e:
-                raise Exception(str(inner_e))
+                raise Exception(str(inner_e)) from inner_e
         else:
             conn = conn_manager
         if not conn:

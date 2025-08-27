@@ -7,7 +7,9 @@ from llm_connector import LLMClient
 
 
 @pytest.mark.asyncio
-async def test_mcp_golden_path(client: TestClient, mock_llm_client: MockLLMClient, monkeypatch: pytest.MonkeyPatch):
+async def test_mcp_golden_path(
+    client: TestClient, mock_llm_client: MockLLMClient, monkeypatch: pytest.MonkeyPatch
+):
     """
     Tests the end-to-end 'golden path' of the /mcp endpoint.
 
@@ -24,7 +26,9 @@ async def test_mcp_golden_path(client: TestClient, mock_llm_client: MockLLMClien
     )
 
     # Mock LLMClient instantiation within run_agent_mission
-    monkeypatch.setattr(LLMClient, '__new__', lambda cls, *args, **kwargs: mock_llm_client)
+    monkeypatch.setattr(
+        LLMClient, "__new__", lambda cls, *args, **kwargs: mock_llm_client
+    )
 
     # Act: Call the MCP endpoint with a mission.
     mission_payload = {"query": "Test mission", "agent_id": 1}
@@ -43,4 +47,3 @@ async def test_mcp_golden_path(client: TestClient, mock_llm_client: MockLLMClien
         full_response_text += chunk.decode("utf-8")
 
     assert final_answer in full_response_text
-

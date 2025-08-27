@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from db_connectors import get_milvus_client
@@ -25,12 +25,12 @@ async def retrieve(request: Request):
             try:
                 milvus_client_obj = await milvus_client.__aenter__()
             except Exception as inner_e:
-                raise Exception(str(inner_e))
+                raise Exception(str(inner_e)) from inner_e
         elif hasattr(milvus_client, "__enter__"):
             try:
                 milvus_client_obj = milvus_client.__enter__()
             except Exception as inner_e:
-                raise Exception(str(inner_e))
+                raise Exception(str(inner_e)) from inner_e
         else:
             milvus_client_obj = milvus_client
         if milvus_client_obj is None:

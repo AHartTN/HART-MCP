@@ -7,21 +7,18 @@ import json
 from typing import Any, Dict, List, Optional
 
 from sentence_transformers import SentenceTransformer
-from transformers import pipeline
 
 # Import database connection functions from db_connectors
 from db_connectors import get_sql_server_connection
 from plugins import call_plugin
 from query_utils import (
-    DOCUMENT_SELECT_LIKE,
     SEARCH_NODES_CONTAINS_TEXT,
     execute_sql_query,
     sql_server_connection_context,
+    DOCUMENT_SELECT_VECTOR,
 )
 from utils import milvus_connection_context, neo4j_connection_context
-
-# ...existing code...
-
+from llm_connector import LLMClient
 
 logger = logging.getLogger(__name__)
 try:
@@ -38,8 +35,6 @@ except ImportError as e:
 except Exception as e:
     logger.error("Failed to load embedding model: %s\n%s", e, traceback.format_exc())
     embedding_model = None
-
-from llm_connector import LLMClient
 
 # Initialize LLM client
 llm_client = LLMClient()
@@ -208,27 +203,29 @@ async def search_neo4j(neo4j_driver, query: str) -> List[str]:
     """Search for relevant nodes in Neo4j."""
     if not neo4j_driver:
         logger.error("Neo4j driver is not available.")
+        return [] # Return empty list if driver is not available
+
+    try:
+        # Neo4j session and run are blocking, so run in a thread
+        session = await asyncio.to_thread(neo4j_driver.session)
         try:
-            # Neo4j session and run are blocking, so run in a thread
-            session = await asyncio.to_thread(neo4j_driver.session)
-            try:
-                result = await asyncio.to_thread(
-                    session.run,
-                    SEARCH_NODES_CONTAINS_TEXT,
-                    query=query,
-                )
-                return [record["text"] for record in result]
-            finally:
-                await asyncio.to_thread(session.close)  # Close session in a thread
-        except (RuntimeError, ValueError, TypeError) as e:
-            logger.error(
-                (
-                    "Neo4j search failed: %s\n%s",
-                    e,
-                    traceback.format_exc(),
-                )
+            result = await asyncio.to_thread(
+                session.run,
+                SEARCH_NODES_CONTAINS_TEXT,
+                query=query,
             )
-            return []
+            return [record["text"] for record in result]
+        finally:
+            await asyncio.to_thread(session.close)  # Close session in a thread
+    except (RuntimeError, ValueError, TypeError) as e:
+        logger.error(
+            (
+                "Neo4j search failed: %s\n%s",
+                e,
+                traceback.format_exc(),
+            )
+        )
+        return []
 
 
 async def generate_response(

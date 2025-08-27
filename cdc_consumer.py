@@ -5,6 +5,7 @@ from datetime import datetime
 
 from db_connectors import get_sql_server_connection
 from query_utils import execute_sql_query, sql_server_connection_context
+from rag_pipeline import get_embedding
 from utils import milvus_connection_context, neo4j_connection_context
 
 logger = logging.getLogger(__name__)
@@ -24,11 +25,20 @@ async def poll_changelog_and_sync():
 
             # Query ChangeLog for new entries
             query = "SELECT * FROM ChangeLog WHERE ChangeTimestamp > ? ORDER BY ChangeTimestamp ASC"
-            await asyncio.to_thread(execute_sql_query, cursor, query, (last_sync_timestamp,))
+            await asyncio.to_thread(
+                execute_sql_query, cursor, query, (last_sync_timestamp,)
+            )
             changes = await asyncio.to_thread(cursor.fetchall)
 
             for change in changes:
-                change_id, entity_type, entity_id, operation_type, change_timestamp, payload = change
+                (
+                    change_id,
+                    entity_type,
+                    entity_id,
+                    operation_type,
+                    change_timestamp,
+                    payload,
+                ) = change
                 logger.info(
                     f"Processing change: ID={change_id}, Type={entity_type}, "
                     f"Operation={operation_type}, Timestamp={change_timestamp}"
@@ -69,45 +79,76 @@ async def update_last_sync_timestamp(cursor, timestamp):
 async def sync_document_to_milvus(document_id, payload):
     """Synchronizes document changes to Milvus."""
     logger.info(f"Syncing document {document_id} to Milvus with payload: {payload}")
-    # Implement Milvus upsert logic here
     async with milvus_connection_context() as milvus_client:
         if milvus_client:
-            # Example: insert or update document in Milvus
-            # This would involve generating an embedding for the payload and inserting it
-            # For now, just a log
-            logger.info(f"Document {document_id} synced to Milvus.")
+            text_content = payload.get("DocumentContent")
+            if text_content:
+                embedding = await get_embedding(text_content)
+                if embedding:
+                    data = {
+                        "id": document_id,
+                        "embedding": embedding,
+                        "document_id": document_id,
+                        "text": text_content,
+                    }
+                    milvus_client.upsert(
+                        collection_name="default_collection", data=[data]
+                    )
+                    logger.info(f"Document {document_id} upserted to Milvus.")
+                else:
+                    logger.error(
+                        f"Failed to generate embedding for document {document_id}."
+                    )
+            else:
+                logger.warning(
+                    f"No text content found in payload for document {document_id} to sync to Milvus."
+                )
 
 
 async def delete_document_from_milvus(document_id):
     """Deletes document from Milvus."""
     logger.info(f"Deleting document {document_id} from Milvus.")
-    # Implement Milvus delete logic here
     async with milvus_connection_context() as milvus_client:
         if milvus_client:
-            # Example: delete document from Milvus
-            # For now, just a log
+            milvus_client.delete(
+                collection_name="default_collection", ids=[document_id]
+            )
             logger.info(f"Document {document_id} deleted from Milvus.")
 
 
 async def sync_document_to_neo4j(document_id, payload):
     """Synchronizes document changes to Neo4j."""
     logger.info(f"Syncing document {document_id} to Neo4j with payload: {payload}")
-    # Implement Neo4j upsert logic here
     async with neo4j_connection_context() as neo4j_driver:
         if neo4j_driver:
-            # Example: create or update node in Neo4j
-            # For now, just a log
-            logger.info(f"Document {document_id} synced to Neo4j.")
+            text_content = payload.get("DocumentContent")
+            if text_content:
+                query = (
+                    "MERGE (d:Document {document_id: $document_id}) "
+                    "SET d.text = $text_content"
+                )
+                await asyncio.to_thread(
+                    neo4j_driver.session().run,
+                    query,
+                    document_id=document_id,
+                    text_content=text_content,
+                )
+                logger.info(f"Document {document_id} upserted to Neo4j.")
+            else:
+                logger.warning(
+                    f"No text content found in payload for document {document_id} to sync to Neo4j."
+                )
 
 
 async def delete_document_from_neo4j(document_id):
     """Deletes document from Neo4j."""
     logger.info(f"Deleting document {document_id} from Neo4j.")
-    # Implement Neo4j delete logic here
     async with neo4j_connection_context() as neo4j_driver:
         if neo4j_driver:
-            # Example: delete node from Neo4j
-            # For now, just a log
+            query = "MATCH (d:Document {document_id: $document_id}) DETACH DELETE d"
+            await asyncio.to_thread(
+                neo4j_driver.session().run, query, document_id=document_id
+            )
             logger.info(f"Document {document_id} deleted from Neo4j.")
 
 

@@ -4,7 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from db_connectors import get_milvus_client, get_neo4j_driver, get_sql_server_connection
+from db_connectors import (get_milvus_client, get_neo4j_driver,
+                           get_sql_server_connection)
 from llm_connector import LLMClient
 from server import app
 

@@ -1,10 +1,13 @@
+import asyncio
+import json
+import uuid
+
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from db_connectors import get_sql_server_connection
 from llm_connector import LLMClient
 from models import MCPSchema
-from plugins import call_plugin
 from plugins_folder.agent_core import SpecialistAgent
 from plugins_folder.orchestrator_core import OrchestratorAgent
 from plugins_folder.tools import (
@@ -28,7 +31,11 @@ mission_queues = {}
 
 
 async def run_agent_mission(
-    query: str, agent_id: int, mission_id: str, project_state: ProjectState, llm_client: LLMClient
+    query: str,
+    agent_id: int,
+    mission_id: str,
+    project_state: ProjectState,
+    llm_client: LLMClient,
 ):
     """This function runs the agent mission in the background."""
     update_queue = mission_queues.get(mission_id)
@@ -43,7 +50,11 @@ async def run_agent_mission(
         # Database logging (robust async context manager)
         # Use async context manager to get the actual connection object
         async with get_sql_server_connection() as conn:
-            from query_utils import sql_server_connection_context, AGENTLOG_INSERT, execute_sql_query
+            from query_utils import (
+                sql_server_connection_context,
+                AGENTLOG_INSERT,
+                execute_sql_query,
+            )
 
             async with sql_server_connection_context(conn) as (conn, cursor):
                 # Ensure columns match schema: AgentId, QueryContent, ThoughtTree
@@ -147,12 +158,17 @@ async def mcp(validated_data: MCPSchema, background_tasks: BackgroundTasks):
     agent_id = validated_data.agent_id
     mission_id = str(uuid.uuid4())
     project_state = ProjectState()
-    llm_client = LLMClient() # Instantiate LLMClient here
+    llm_client = LLMClient()  # Instantiate LLMClient here
 
     mission_queues[mission_id] = asyncio.Queue()
 
     background_tasks.add_task(
-        run_agent_mission, query, agent_id, mission_id, project_state, llm_client # Pass llm_client
+        run_agent_mission,
+        query,
+        agent_id,
+        mission_id,
+        project_state,
+        llm_client,  # Pass llm_client
     )
 
     return JSONResponse({"mission_id": mission_id})

@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -11,7 +11,6 @@ from routes.ingest import ingest_router
 from routes.mcp import mcp_router
 from routes.retrieve import retrieve_router
 from routes.status import status_router
-
 from security import get_api_key
 
 app = FastAPI(dependencies=[Depends(get_api_key)])

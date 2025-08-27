@@ -7,7 +7,8 @@ from typing import Callable, Dict, List, Optional
 from llm_connector import LLMClient
 from plugins_folder.tools import ToolRegistry
 from project_state import ProjectState
-from prompts import AGENT_CONSTITUTION  # Orchestrator will also use a constitution
+from prompts import \
+    AGENT_CONSTITUTION  # Orchestrator will also use a constitution
 from utils import sql_connection_context
 
 

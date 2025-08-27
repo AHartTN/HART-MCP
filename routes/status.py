@@ -8,7 +8,6 @@ status_router = APIRouter()
 
 @status_router.get("/status")
 async def status():
-    from utils import check_database_health
 
     db_status = await check_database_health()
     databases = {
