@@ -7,8 +7,7 @@ from typing import Callable, Dict, List, Optional
 from llm_connector import LLMClient
 from plugins_folder.tools import ToolRegistry
 from project_state import ProjectState
-from prompts import \
-    AGENT_CONSTITUTION  # Orchestrator will also use a constitution
+from prompts import AGENT_CONSTITUTION
 from utils import sql_connection_context
 
 
@@ -132,14 +131,14 @@ class OrchestratorAgent:
             available_tools = ", ".join(self.tool_registry.get_tool_names())
             scratchpad_content = "\n".join(self.scratchpad)
 
-            llm_prompt = (
-                f"{system_prompt}"
-                f"Overall Mission: {mission_prompt}\n"
-                f"Available Tools: {available_tools}\n"
-                f"Scratchpad History:\n{scratchpad_content}\n"
-                "Your next response MUST be a JSON object with two keys: 'thought' (string) and 'action' (object). The 'action' object MUST have two keys: 'tool' (string, name of the tool to use) and 'query' (string, the input for the tool). If you have completed the mission, use the 'FinishTool' and provide the final answer as the query.\n"
-                'Example: {"thought": "I need to delegate this task to a specialist.", "action": {"tool": "DelegateToSpecialistTool", "query": "sub-task for specialist"}}'
-            )
+            llm_prompt = f"""
+{system_prompt}
+Overall Mission: {mission_prompt}
+Available Tools: {available_tools}
+Scratchpad History:
+{scratchpad_content}
+Your next response MUST be a JSON object with two keys: 'thought' (string) and 'action' (object). The 'action' object MUST have two keys: 'tool_name' (string, name of the tool to use) and 'parameters' (object, a dictionary of named parameters for the tool). If you have completed the mission, use the 'FinishTool' and provide the final answer as the 'response' parameter.
+Example: {{'thought': 'I need to delegate this task to a specialist.', 'action': {{'tool_name': 'DelegateToSpecialistTool', 'parameters': {{'mission_prompt': 'sub-task for specialist'}}}}}} """
             logger.info("LLM Prompt for step %s:\n%s", step, llm_prompt)
 
             if self.update_callback:
@@ -162,15 +161,15 @@ class OrchestratorAgent:
                 if (
                     not thought
                     or not action
-                    or "tool" not in action
-                    or "query" not in action
+                    or "tool_name" not in action
+                    or "parameters" not in action
                 ):
                     raise ValueError(
                         "LLM response is not in the expected JSON format or missing keys."
                     )
 
-                tool_name = action["tool"]
-                query_for_tool = action["query"]
+                tool_name = action["tool_name"]
+                parameters_for_tool = action["parameters"]
 
                 self.scratchpad.append(f"Thought: {thought}")
                 if self.update_callback:
@@ -183,12 +182,10 @@ class OrchestratorAgent:
                     )
 
                 if tool_name == "DelegateToSpecialistTool":
-                    query_for_tool = json.dumps(
-                        {"mission_prompt": query_for_tool, "log_id": log_id}
-                    )
+                    parameters_for_tool["log_id"] = log_id
 
                 if tool_name == "FinishTool":
-                    final_answer = query_for_tool
+                    final_answer = parameters_for_tool.get("response")
                     self.scratchpad.append(f"Final Answer: {final_answer}")
                     if self.update_callback:
                         await self.update_callback(
@@ -201,21 +198,24 @@ class OrchestratorAgent:
                     break
                 else:
                     logger.info(
-                        "Attempting to use tool: %s with query: %s",
+                        "Attempting to use tool: %s with parameters: %s",
                         tool_name,
-                        query_for_tool,
+                        parameters_for_tool,
                     )
                     if self.update_callback:
                         await self.update_callback(
                             {
                                 "type": "orchestrator_action",
-                                "content": {"tool": tool_name, "query": query_for_tool},
+                                "content": {
+                                    "tool_name": tool_name,
+                                    "parameters": parameters_for_tool,
+                                },
                                 "agent_name": self.name,
                             }
                         )
 
                     tool_result = await self.tool_registry.use_tool(
-                        tool_name, query_for_tool
+                        tool_name, **parameters_for_tool
                     )
                     observation = (
                         f"Observation: Tool Result ({tool_name}): {tool_result}"
@@ -287,7 +287,8 @@ class OrchestratorAgent:
             )
 
         scratchpad_text = "\n".join(self.scratchpad)
-        summary_prompt = f"""Please summarize the following orchestrator mission scratchpad, focusing on key actions, observations, and outcomes. This summary will be used to update the orchestrator agent's long-term beliefs.
+        summary_prompt = f"""
+Please summarize the following orchestrator mission scratchpad, focusing on key actions, observations, and outcomes. This summary will be used to update the orchestrator agent's long-term beliefs.
 
 Scratchpad:
 {scratchpad_text}"""

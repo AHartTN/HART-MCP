@@ -15,7 +15,7 @@ class BaseTool(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, query: str):
+    async def execute(self, **kwargs):
         pass
 
 
@@ -29,11 +29,11 @@ class ToolRegistry:
     def get_tool_names(self) -> List[str]:
         return list(self._tools.keys())
 
-    async def use_tool(self, tool_name: str, query: str):
+    async def use_tool(self, tool_name: str, **kwargs):
         tool = self._tools.get(tool_name)
         if not tool:
             raise ValueError(f"Tool '{tool_name}' not found.")
-        return await tool.execute(query)
+        return await tool.execute(**kwargs)
 
 
 class RAGTool(BaseTool):
@@ -41,7 +41,10 @@ class RAGTool(BaseTool):
     def name(self) -> str:
         return "RAG Tool"
 
-    async def execute(self, query: str) -> dict:
+    async def execute(self, **kwargs) -> dict:
+        query = kwargs.get("query")
+        if not query:
+            raise ValueError("RAGTool requires a 'query' parameter.")
         logger.info(f"RAGTool executing with query: {query}")
         # Fleshed out RAG simulation
         simulated_data = {
@@ -75,7 +78,10 @@ class TreeOfThoughtTool(BaseTool):
     def name(self) -> str:
         return "Tree of Thought Tool"
 
-    async def execute(self, problem: str) -> Thought:
+    async def execute(self, **kwargs) -> Thought:
+        problem = kwargs.get("problem")
+        if not problem:
+            raise ValueError("TreeOfThoughtTool requires a 'problem' parameter.")
         logger.info(f"TreeOfThoughtTool executing with problem: {problem}")
         # Fleshed out ToT simulation
         root_thought = Thought(f"Root thought for: {problem}", 1.0)
@@ -99,9 +105,12 @@ class FinishTool(BaseTool):
     def name(self) -> str:
         return "FinishTool"
 
-    async def execute(self, query: str):
-        logger.info(f"FinishTool executing with query: {query}")
-        return query
+    async def execute(self, **kwargs):
+        response = kwargs.get("response")
+        if not response:
+            raise ValueError("FinishTool requires a 'response' parameter.")
+        logger.info(f"FinishTool executing with response: {response}")
+        return response
 
 
 class DelegateToSpecialistTool(BaseTool):
@@ -114,15 +123,14 @@ class DelegateToSpecialistTool(BaseTool):
     def name(self) -> str:
         return "DelegateToSpecialistTool"
 
-    async def execute(self, query: str) -> dict:
-        try:
-            data = json.loads(query)
-            mission_prompt = data.get("mission_prompt")
-            log_id = data.get("log_id")
-        except json.JSONDecodeError as e:
+    async def execute(self, **kwargs) -> dict:
+        mission_prompt = kwargs.get("mission_prompt")
+        log_id = kwargs.get("log_id")
+
+        if not mission_prompt:
             raise ValueError(
-                "Invalid JSON format for DelegateToSpecialistTool. Expected a JSON string with 'mission_prompt' and 'log_id'."
-            ) from e
+                "DelegateToSpecialistTool requires a 'mission_prompt' parameter."
+            )
 
         logger.info(f"DelegateToSpecialistTool delegating mission: {mission_prompt}")
         # The update_callback is passed down to the specialist so its thoughts are streamed.
@@ -142,20 +150,9 @@ class WriteToSharedStateTool(BaseTool):
     def name(self) -> str:
         return "WriteToSharedStateTool"
 
-    async def execute(self, query: str):
-        """
-        Writes a key-value pair to the shared project state.
-        Expects a JSON string with 'key' and 'value'.
-        e.g., '{"key": "research_notes", "value": "These are the notes..."}'
-        """
-        try:
-            data = json.loads(query)
-            key = data.get("key")
-            value = data.get("value")
-        except json.JSONDecodeError as e:
-            raise ValueError(
-                "Invalid JSON format for WriteToSharedStateTool. Expected a JSON string with 'key' and 'value'."
-            ) from e
+    async def execute(self, **kwargs):
+        key = kwargs.get("key")
+        value = kwargs.get("value")
 
         if not key:
             raise ValueError("Missing 'key' in data for WriteToSharedStateTool.")
@@ -172,10 +169,10 @@ class ReadFromSharedStateTool(BaseTool):
     def name(self) -> str:
         return "ReadFromSharedStateTool"
 
-    async def execute(self, key: str):
-        """
-        Reads a value from the shared project state by key.
-        """
+    async def execute(self, **kwargs):
+        key = kwargs.get("key")
+        if not key:
+            raise ValueError("ReadFromSharedStateTool requires a 'key' parameter.")
         logger.info(f"Reading from shared state: key='{key}'")
         value = self._project_state.get_state(key)
         if value is None:
@@ -195,10 +192,10 @@ class SendClarificationTool(BaseTool):
     def name(self) -> str:
         return "SendClarificationTool"
 
-    async def execute(self, query: str):
-        """
-        Sends a clarification question to the orchestrator.
-        """
+    async def execute(self, **kwargs):
+        query = kwargs.get("query")
+        if not query:
+            raise ValueError("SendClarificationTool requires a 'query' parameter.")
         logger.info(f"Sending clarification to orchestrator: {query}")
         self._project_state.update_state("clarification_for_orchestrator", query)
         return "Successfully sent clarification to orchestrator."
@@ -212,10 +209,10 @@ class CheckForClarificationsTool(BaseTool):
     def name(self) -> str:
         return "CheckForClarificationsTool"
 
-    async def execute(self, query: str):
-        """
-        Checks for clarifications from specialists.
-        """
+    async def execute(self, **kwargs):
+        query = kwargs.get("query")
+        if not query:
+            raise ValueError("CheckForClarificationsTool requires a 'query' parameter.")
         logger.info("Checking for clarifications from specialists.")
         clarification = self._project_state.get_state("clarification_for_orchestrator")
         if clarification:

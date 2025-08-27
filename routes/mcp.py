@@ -10,17 +10,11 @@ from llm_connector import LLMClient
 from models import MCPSchema
 from plugins_folder.agent_core import SpecialistAgent
 from plugins_folder.orchestrator_core import OrchestratorAgent
-from plugins_folder.tools import (
-    CheckForClarificationsTool,
-    DelegateToSpecialistTool,
-    FinishTool,
-    RAGTool,
-    ReadFromSharedStateTool,
-    SendClarificationTool,
-    ToolRegistry,
-    TreeOfThoughtTool,
-    WriteToSharedStateTool,
-)
+from plugins_folder.tools import (CheckForClarificationsTool,
+                                  DelegateToSpecialistTool, FinishTool,
+                                  RAGTool, ReadFromSharedStateTool,
+                                  SendClarificationTool, ToolRegistry,
+                                  TreeOfThoughtTool, WriteToSharedStateTool)
 from project_state import ProjectState
 from security import get_api_key
 
@@ -50,11 +44,8 @@ async def run_agent_mission(
         # Database logging (robust async context manager)
         # Use async context manager to get the actual connection object
         async with get_sql_server_connection() as conn:
-            from query_utils import (
-                sql_server_connection_context,
-                AGENTLOG_INSERT,
-                execute_sql_query,
-            )
+            from query_utils import (AGENTLOG_INSERT, execute_sql_query,
+                                     sql_server_connection_context)
 
             async with sql_server_connection_context(conn) as (conn, cursor):
                 # Ensure columns match schema: AgentId, QueryContent, ThoughtTree

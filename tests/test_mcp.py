@@ -2,8 +2,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.conftest import MockLLMClient
 from llm_connector import LLMClient
+from tests.conftest import MockLLMClient
 
 
 @pytest.mark.asyncio

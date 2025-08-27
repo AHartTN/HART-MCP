@@ -5,7 +5,7 @@ import traceback
 from typing import Optional
 
 import pyodbc
-from neo4j import Driver, GraphDatabase
+from neo4j import AsyncGraphDatabase, Driver
 from neo4j.exceptions import Neo4jError
 from pymilvus import MilvusClient, MilvusException
 
@@ -51,7 +51,7 @@ async def get_milvus_client() -> Optional[MilvusClient]:
     Connect to Milvus database using credentials from env vars.
     """
     try:
-        uri = f"http://{MILVUS_USER}:{MILVUS_PASSWORD}@{MILVUS_HOST}:" f"{MILVUS_PORT}"
+        uri = f"http://{MILVUS_USER}:{MILVUS_PASSWORD}@{MILVUS_HOST}:{MILVUS_PORT}"
         logger.info("Connecting to Milvus at %s...", uri)
         client = await asyncio.to_thread(
             MilvusClient, uri=uri
@@ -69,11 +69,11 @@ async def get_neo4j_driver() -> Optional[Driver]:
     """
     try:
         logger.info("Connecting to Neo4j at %s...", NEO4J_URI)
-        driver = await asyncio.to_thread(
-            GraphDatabase.driver,
+        driver = AsyncGraphDatabase.driver(
             str(NEO4J_URI),
-            auth=(str(NEO4J_USER), str(NEO4J_PASSWORD)),
+            auth=Auth(str(NEO4J_USER), str(NEO4J_PASSWORD)),
         )
+        await driver.verify_connectivity()
         logger.info("Successfully connected to Neo4j.")
         return driver
     except Neo4jError as exc:

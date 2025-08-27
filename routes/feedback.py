@@ -1,8 +1,10 @@
+import logging
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from models import FeedbackSchema
-from utils import logger
+
+logger = logging.getLogger(__name__)
 
 feedback_router = APIRouter()
 

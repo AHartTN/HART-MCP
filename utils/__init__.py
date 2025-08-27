@@ -16,8 +16,7 @@ from neo4j.exceptions import Neo4jError
 from PIL import Image
 from pymilvus import MilvusException
 
-from db_connectors import (get_milvus_client, get_neo4j_driver,
-                           get_sql_server_connection)
+from db_connectors import get_milvus_client, get_neo4j_driver, get_sql_server_connection
 
 logger = logging.getLogger(__name__)
 

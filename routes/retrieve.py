@@ -4,12 +4,16 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from db_connectors import get_milvus_client
-from rag_pipeline import get_embedding
 from security import get_api_key
+from services.embedding_service import EmbeddingService  # New import
+from services.database_search import search_milvus  # New import
 
 logger = logging.getLogger(__name__)
 
 retrieve_router = APIRouter(dependencies=[Depends(get_api_key)])
+
+# Initialize Embedding Service
+embedding_service = EmbeddingService()  # New instantiation
 
 
 @retrieve_router.post("/retrieve")
@@ -17,7 +21,7 @@ async def retrieve(request: Request):
     try:
         body = await request.json()
         query = body.get("query")
-        embedding = await get_embedding(query)
+        embedding = await embedding_service.get_embedding(query)  # Updated call
         if embedding is None:
             raise Exception("Failed to generate query embedding.")
         milvus_client = await get_milvus_client()
@@ -36,9 +40,10 @@ async def retrieve(request: Request):
         if milvus_client_obj is None:
             raise Exception("Failed to connect to Milvus.")
         collection_name = "default_collection"
-        from rag_pipeline import search_milvus
-
-        results = search_milvus(milvus_client_obj, embedding, collection_name)
+        # from rag_pipeline import search_milvus # Removed
+        results = search_milvus(
+            milvus_client_obj, embedding, collection_name
+        )  # Updated call
         if results is None or not results:
             logger.warning("No results found for query: %s", query)
             return JSONResponse({"error": "No results found."}, status_code=404)

@@ -7,18 +7,24 @@ HART-MCP (Multi-Agent Control Plane) is an innovative and extensible platform de
 The HART-MCP server is built with a modular and asynchronous architecture, primarily using FastAPI. Key components include:
 
 *   **`server.py`**: The main entry point for the FastAPI application, responsible for initializing the server and routing incoming requests to specific API endpoints.
-*   **`rag_pipeline.py`**: The core of the RAG system. It orchestrates the process of generating embeddings, performing vector searches across multiple data sources (Milvus, Neo4j, SQL Server 2025 with native vector search), combining retrieved context, and generating a final response using the standardized Gemini Pro Language Model (LLM) via `llm_connector.py`. It also integrates with the plugin system.
+*   **RAG Pipeline (Modularized)**: The core RAG system has been modularized for improved maintainability and reusability. Its responsibilities are now distributed across:
+    *   **`services/embedding_service.py`**: Handles the generation of text embeddings.
+    *   **`services/database_search.py`**: Encapsulates database-specific search logic (Milvus, Neo4j, SQL Server).
+    *   **`services/rag_orchestrator.py`**: Orchestrates the RAG process, combining embeddings, database searches, context building, LLM invocation, and plugin calls.
+    *   **`rag_pipeline.py`**: Now acts as a high-level coordinator, initializing the RAG components and providing the main entry point for RAG operations.
+*   **`llm_connector.py`**: Provides a unified interface for interacting with various Large Language Models (LLMs), now supporting Gemini, Anthropic Claude, Llama (via Hugging Face Inference API), and Ollama.
 *   **`db_connectors.py`**: Centralizes the logic for establishing and managing connections to the various databases (SQL Server, Milvus, Neo4j). It provides asynchronous functions for connecting and performing basic database operations.
 *   **`plugins.py`**: Implements a dynamic plugin system that allows for extending the server's capabilities. Plugins are loaded from the `plugins_folder/` and can be called by name to execute custom agent logic or tools.
 *   **`routes/`**: A directory containing modular FastAPI routers (e.g., `agent.py`, `feedback.py`, `ingest.py`, `mcp.py`, `retrieve.py`). Each file defines API endpoints for specific functionalities, promoting a clean and organized API structure.
-*   **`config.py`**: Manages the loading and parsing of environment variables from a `.env` file, providing critical configuration parameters for database connections and other settings.
+*   **`config.py`**: Manages the loading and parsing of environment variables from a `.env` file, providing critical configuration parameters for database connections, LLM settings, and other application-wide settings.
 *   **`utils.py`**: A collection of general utility functions, including asynchronous context managers for database connections, file processing (text extraction from various formats), text chunking, and database health checks.
+*   **`utils/async_runner.py`**: A new utility module for running asynchronous functions in background threads, used by the RAG pipeline.
 *   **`query_utils.py`**: Centralizes SQL Server and Neo4j query templates as constants and provides generic functions for executing these queries, including support for SQL Server 2025's native vector and JSON types, ensuring consistency and reusability.
 *   **`cdc_consumer.py`**: Implements a Change Data Capture (CDC) consumer that polls a SQL Server `ChangeLog` table for new entries. It processes these changes to synchronize data (e.g., chunks, agent logs, agents, documents) across Milvus and Neo4j, ensuring data consistency across the different database systems.
 *   **`tree_of_thought.py`**: Implements a Tree of Thought (ToT) reasoning framework. It allows for the generation and expansion of thoughts, scoring them, and selecting the best thought. The thought tree structure is persisted in a JSON column within the SQL Server `AgentLogs` table, and its expansion can integrate with the RAG pipeline.
 
 ## Data Flow
-Requests enter the system via the API endpoints defined in `routes/`. These requests are then processed by the `server.py` which directs them to the appropriate handler. For RAG-related queries, the `rag_pipeline.py` takes over, generating embeddings, querying Milvus (vector search), Neo4j (graph data), and SQL Server (structured data) via `db_connectors.py` and `query_utils.py`. The retrieved context is then combined and fed to an LLM to generate a comprehensive response. The system also supports dynamic extension through `plugins.py`. Data consistency across databases is maintained by `cdc_consumer.py` which synchronizes changes from SQL Server to Milvus and Neo4j.
+Requests enter the system via the API endpoints defined in `routes/`. These requests are then processed by the `server.py` which directs them to the appropriate handler. For RAG-related queries, the modularized RAG pipeline (orchestrated by `services/rag_orchestrator.py` and utilizing `services/embedding_service.py` and `services/database_search.py`) takes over. It generates embeddings, queries Milvus (vector search), Neo4j (graph data), and SQL Server (structured data) via `db_connectors.py` and `query_utils.py`. The retrieved context is then combined and fed to the configured LLM via `llm_connector.py` to generate a comprehensive response. The system also supports dynamic extension through `plugins.py`. Data consistency across databases is maintained by `cdc_consumer.py` which synchronizes changes from SQL Server to Milvus and Neo4j.
 
 ## Installation
 
@@ -49,7 +55,7 @@ Requests enter the system via the API endpoints defined in `routes/`. These requ
     ```
 
 ## Configuration
-The project relies on environment variables loaded from a `.env` file at the root of the project using `python-dotenv`. This file is crucial for database connections and other settings.
+The project relies on environment variables loaded from a `.env` file at the root of the project using `python-dotenv`. This file is crucial for database connections, LLM settings, and other application-wide parameters.
 
 **Required Environment Variables (to be placed in your `.env` file):**
 
@@ -71,6 +77,33 @@ The project relies on environment variables loaded from a `.env` file at the roo
 *   `NEO4J_URI`: Neo4j server URI (e.g., `bolt://localhost:7687`).
 *   `NEO4J_USER`: Username for Neo4j authentication.
 *   `NEO4J_PASSWORD`: Password for Neo4j authentication.
+
+#### LLM Configuration
+*   `LLM_SOURCE`: Specifies the LLM provider to use. Options: `gemini`, `claude`, `llama`, `ollama`. Defaults to `gemini`.
+
+*   **Gemini Specific:**
+    *   `GEMINI_API_KEY`: Your API key for Google Gemini.
+    *   `GEMINI_MODEL_NAME`: (Optional) Default model name, e.g., `gemini-pro`.
+    *   `GEMINI_TEMPERATURE`: (Optional) Default temperature for generation, e.g., `0.7`.
+    *   `GEMINI_MAX_TOKENS`: (Optional) Default maximum output tokens, e.g., `2048`.
+
+*   **Claude Specific:**
+    *   `ANTHROPIC_API_KEY`: Your API key for Anthropic Claude.
+    *   `CLAUDE_MODEL_NAME`: (Optional) Default model name, e.g., `claude-3-opus-20240229`.
+    *   `CLAUDE_TEMPERATURE`: (Optional) Default temperature for generation, e.g., `0.7`.
+    *   `CLAUDE_MAX_TOKENS`: (Optional) Default maximum output tokens, e.g., `2048`.
+
+*   **Llama (Hugging Face Inference API) Specific:**
+    *   `HUGGINGFACE_API_TOKEN`: Your Hugging Face API token.
+    *   `LLAMA_MODEL_NAME`: (Optional) Default model name, e.g., `meta-llama/Llama-2-7b-chat-hf`.
+    *   `LLAMA_TEMPERATURE`: (Optional) Default temperature for generation, e.g., `0.7`.
+    *   `LLAMA_MAX_TOKENS`: (Optional) Default maximum output tokens, e.g., `2048`.
+
+*   **Ollama Specific:**
+    *   `OLLAMA_BASE_URL`: (Optional) The base URL for your Ollama instance, e.g., `http://localhost:11434`.
+    *   `OLLAMA_MODEL_NAME`: (Optional) The name of the model you've pulled in Ollama, e.g., `llama2`.
+    *   `OLLAMA_TEMPERATURE`: (Optional) Default temperature for generation, e.g., `0.7`.
+    *   `OLLAMA_MAX_TOKENS`: (Optional) Default maximum output tokens, e.g., `2048`.
 
 ## Running the Server
 The server can be run using Gunicorn, and Docker Compose is used for orchestrating the application and its dependencies.
@@ -120,6 +153,9 @@ Key dependencies include:
 *   `neo4j`: Neo4j graph database driver.
 *   `sentence-transformers`: For generating text embeddings.
 *   `transformers`: For LLM integration (e.g., `distilgpt2`).
+*   `anthropic`: For Anthropic Claude LLM integration.
+*   `huggingface_hub`: For Hugging Face Inference API integration (used for Llama).
+*   `httpx`: For making asynchronous HTTP requests (used for Ollama).
 *   `PyPDF2`, `pytesseract`, `Pillow`: For PDF and image text extraction.
 *   `speech_recognition`: For audio transcription.
 *   `ruff`, `black`, `isort`: For code formatting and linting.
@@ -139,6 +175,8 @@ This section documents the ongoing efforts to maintain and improve the codebase'
 
 As part of a recent cleanup initiative, the following actions have been completed:
 
+*   **RAG Pipeline Modularization:** The `rag_pipeline.py` has been refactored into smaller, more focused service modules (`services/embedding_service.py`, `services/database_search.py`, `services/rag_orchestrator.py`, `utils/async_runner.py`). This significantly improves modularity, reusability, and maintainability.
+*   **LLM Connector Expansion:** The `llm_connector.py` now supports multiple LLM providers (Gemini, Claude, Llama via Hugging Face, Ollama) through a unified, extensible interface.
 *   **Automated Formatting:** Applied `isort` for import sorting and `black` for code formatting across the entire codebase, ensuring consistent style and adherence to PEP 8.
 *   **Linting and Static Analysis:** Utilized `ruff` to identify and fix various linting issues, including:
     *   Resolution of undefined name errors by adding missing imports (e.g., `traceback` module).

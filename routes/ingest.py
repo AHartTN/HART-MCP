@@ -2,13 +2,13 @@ import os
 import uuid
 
 import aiofiles
-from fastapi import APIRouter, File, UploadFile, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import JSONResponse
 
 from db_connectors import get_sql_server_connection
 from query_utils import insert_document
-from utils import allowed_file, extract_text
 from security import get_api_key
+from utils import allowed_file, extract_text
 
 ingest_router = APIRouter(dependencies=[Depends(get_api_key)])
 

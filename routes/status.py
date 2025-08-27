@@ -8,7 +8,6 @@ status_router = APIRouter()
 
 @status_router.get("/status")
 async def status():
-
     db_status = await check_database_health()
     databases = {
         "milvus": "connected" if db_status["milvus"] else "disconnected",

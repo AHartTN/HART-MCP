@@ -30,3 +30,6 @@ uvicorn[standard]
 pydantic
 aiofiles
 google-generativeai
+anthropic
+huggingface_hub
+httpx

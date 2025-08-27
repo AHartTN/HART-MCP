@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,6 +12,7 @@
             background-color: #f0f2f5;
             color: #1c1e21;
         }
+
         .container {
             max-width: 900px;
             margin: 0 auto;
@@ -19,11 +21,13 @@
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
+
         h1 {
             color: #1877f2;
             text-align: center;
             margin-bottom: 20px;
         }
+
         .info-bar {
             display: flex;
             justify-content: space-between;
@@ -32,9 +36,11 @@
             background-color: #e9ecef;
             border-radius: 5px;
         }
+
         .info-bar span {
             font-weight: bold;
         }
+
         textarea {
             width: 100%;
             padding: 10px;
@@ -45,11 +51,13 @@
             resize: vertical;
             font-size: 14px;
         }
+
         .button-group {
             display: flex;
             gap: 10px;
             margin-bottom: 20px;
         }
+
         button {
             background-color: #1877f2;
             color: white;
@@ -60,14 +68,17 @@
             font-size: 16px;
             transition: background-color 0.2s;
         }
+
         button:hover {
             background-color: #166fe5;
         }
+
         .output-section h2 {
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
+
         .scratchpad-container {
             background-color: #f0f2f5;
             padding: 10px;
@@ -79,18 +90,21 @@
             flex-direction: column;
             gap: 10px;
         }
+
         .message-bubble {
             padding: 10px 15px;
             border-radius: 18px;
             max-width: 80%;
             word-wrap: break-word;
         }
+
         .message-header {
             font-weight: bold;
             margin-bottom: 4px;
             font-size: 12px;
             color: #65676b;
         }
+
         .message-content {
             font-size: 14px;
             white-space: pre-wrap;
@@ -102,12 +116,14 @@
             border: 1px solid #cce0ff;
             align-self: flex-start;
         }
+
         .agent-specialist {
             background-color: #f0e6ff;
             border: 1px solid #d9c2ff;
             align-self: flex-start;
             margin-left: 20px;
         }
+
         .system-message {
             background-color: #e9ecef;
             border: 1px solid #d6d8db;
@@ -115,18 +131,35 @@
             text-align: center;
             font-style: italic;
         }
+
         .error-message {
             background-color: #ffebe5;
             border: 1px solid #ffc5b5;
             color: #d92b00;
             align-self: stretch;
         }
-        .status-running { color: #31a24c; font-weight: bold; }
-        .status-idle { color: #65676b; }
-        .status-completed { color: #1877f2; font-weight: bold; }
-        .status-error { color: #fa383e; font-weight: bold; }
+
+        .status-running {
+            color: #31a24c;
+            font-weight: bold;
+        }
+
+        .status-idle {
+            color: #65676b;
+        }
+
+        .status-completed {
+            color: #1877f2;
+            font-weight: bold;
+        }
+
+        .status-error {
+            color: #fa383e;
+            font-weight: bold;
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>Hartonomous Agent Mission Control</h1>
@@ -218,7 +251,7 @@
 
             scratchpadOutput.innerHTML = '';
             appendMessage('status', 'Launching agent...', 'System');
-            
+
             const agentId = 1;
             agentIdSpan.textContent = agentId;
             agentStatusSpan.textContent = 'Running';
@@ -229,55 +262,56 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ query: missionPrompt, agent_id: agentId }),
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.mission_id) {
-                    currentEventSource = new EventSource(`/stream/${data.mission_id}`);
+                .then(response => response.json())
+                .then(data => {
+                    if (data.mission_id) {
+                        currentEventSource = new EventSource(`/stream/${data.mission_id}`);
 
-                    currentEventSource.onmessage = function(event) {
-                        try {
-                            const msg = JSON.parse(event.data);
-                            const agentName = msg.agent_name || 'System';
-                            const type = msg.type || 'unknown';
-                            let content = msg.content;
+                        currentEventSource.onmessage = function (event) {
+                            try {
+                                const msg = JSON.parse(event.data);
+                                const agentName = msg.agent_name || 'System';
+                                const type = msg.type || 'unknown';
+                                let content = msg.content;
 
-                            if (type.includes('action')) {
-                                content = `Using Tool: ${content.tool}
+                                if (type.includes('action')) {
+                                    content = `Using Tool: ${content.tool}
 Query: ${content.query}`;
-                            } else if (typeof content !== 'string') {
-                                content = JSON.stringify(content, null, 2);
-                            }
-                            
-                            appendMessage(type, content, agentName);
+                                } else if (typeof content !== 'string') {
+                                    content = JSON.stringify(content, null, 2);
+                                }
 
-                        } catch (e) {
-                            if (event.data.includes("mission_completed")) {
-                                appendMessage('status', 'Mission Completed.', 'System');
-                                agentStatusSpan.textContent = 'Completed';
-                                agentStatusSpan.className = 'status-completed';
-                                currentEventSource.close();
-                            } else {
-                                appendMessage('raw', event.data, 'System');
-                            }
-                        }
-                    };
+                                appendMessage(type, content, agentName);
 
-                    currentEventSource.onerror = function(err) {
-                        appendMessage('error', 'Connection Error: Could not connect to agent stream.', 'System');
-                        agentStatusSpan.textContent = 'Error';
-                        agentStatusSpan.className = 'status-error';
-                        currentEventSource.close();
-                    };
-                } else {
-                    throw new Error(data.error || 'Failed to start mission.');
-                }
-            })
-            .catch(error => {
-                appendMessage('error', `Fetch Error: ${error.message}`, 'System');
-                agentStatusSpan.textContent = 'Error';
-                agentStatusSpan.className = 'status-error';
-            });
+                            } catch (e) {
+                                if (event.data.includes("mission_completed")) {
+                                    appendMessage('status', 'Mission Completed.', 'System');
+                                    agentStatusSpan.textContent = 'Completed';
+                                    agentStatusSpan.className = 'status-completed';
+                                    currentEventSource.close();
+                                } else {
+                                    appendMessage('raw', event.data, 'System');
+                                }
+                            }
+                        };
+
+                        currentEventSource.onerror = function (err) {
+                            appendMessage('error', 'Connection Error: Could not connect to agent stream.', 'System');
+                            agentStatusSpan.textContent = 'Error';
+                            agentStatusSpan.className = 'status-error';
+                            currentEventSource.close();
+                        };
+                    } else {
+                        throw new Error(data.error || 'Failed to start mission.');
+                    }
+                })
+                .catch(error => {
+                    appendMessage('error', `Fetch Error: ${error.message}`, 'System');
+                    agentStatusSpan.textContent = 'Error';
+                    agentStatusSpan.className = 'status-error';
+                });
         });
     </script>
 </body>
+
 </html>

@@ -14,7 +14,7 @@ FROM Chunks
 ORDER BY CosineDistance DESC
 """
 AGENTLOG_INSERT = (
-    "INSERT INTO AgentLogs (AgentID, QueryContent, ThoughtTree) " "VALUES (?, ?, ?);"
+    "INSERT INTO AgentLogs (AgentID, QueryContent, ThoughtTree) VALUES (?, ?, ?);"
 )
 AGENTLOG_UPDATE_THOUGHTTREE = "UPDATE AgentLogs SET ThoughtTree = ? WHERE LogID = ?"
 DOCUMENT_INSERT = (
@@ -60,7 +60,7 @@ AGENTLOG_MERGE = "MERGE (l:AgentLog {id: $log_id, agent_id: $agent_id})"
 AGENTLOG_DELETE = "MATCH (l:AgentLog {id: $log_id}) DETACH DELETE l"
 AGENT_DELETE = "MATCH (a:Agent {id: $agent_id}) DETACH DELETE a"
 DOCUMENT_MERGE = (
-    "MERGE (d:Document {id: $document_id, title: $title, " "source_url: $source_url})"
+    "MERGE (d:Document {id: $document_id, title: $title, source_url: $source_url})"
 )
 DOCUMENT_DELETE = "MATCH (d:Document {id: $document_id}) DETACH DELETE d"
 
