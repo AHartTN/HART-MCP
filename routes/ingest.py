@@ -1,15 +1,11 @@
-import asyncio
-import os
-import uuid
-
-import aiofiles
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, UploadFile, Depends
 from fastapi.responses import JSONResponse
 
 from db_connectors import get_sql_server_connection, insert_document
 from utils import allowed_file, extract_text, logger
+from security import get_api_key
 
-ingest_router = APIRouter()
+ingest_router = APIRouter(dependencies=[Depends(get_api_key)])
 
 
 @ingest_router.post("/ingest")

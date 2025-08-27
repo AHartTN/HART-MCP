@@ -3,6 +3,7 @@ import logging
 import os
 import threading
 import traceback
+import json
 from typing import Any, Dict, List, Optional
 
 from sentence_transformers import SentenceTransformer
@@ -38,21 +39,10 @@ except Exception as e:
     logger.error("Failed to load embedding model: %s\n%s", e, traceback.format_exc())
     embedding_model = None
 
-# Initialize LLM pipeline
-try:
-    llm_pipeline = pipeline("text-generation", model="distilgpt2")
-except ImportError as e:
-    logger.error(
-        (
-            "Failed to import transformers pipeline: %s\n%s",
-            e,
-            traceback.format_exc(),
-        )
-    )
-    llm_pipeline = None
-except Exception as e:
-    logger.error("Failed to load LLM model: %s\n%s", e, traceback.format_exc())
-    llm_pipeline = None
+from llm_connector import LLMClient
+
+# Initialize LLM client
+llm_client = LLMClient()
 
 
 async def _search_milvus(embedding):
@@ -109,7 +99,7 @@ async def _search_neo4j(query):
         return []
 
 
-async def _search_sql_server(query, sql_server_conn=None):
+async def _search_sql_server(query_embedding, sql_server_conn=None):
     if sql_server_conn is None:
         try:
             sql_server_conn = get_sql_server_connection()
@@ -139,8 +129,8 @@ async def _search_sql_server(query, sql_server_conn=None):
             await asyncio.to_thread(
                 execute_sql_query,
                 cursor,
-                DOCUMENT_SELECT_LIKE,
-                (f"%{query}%",),
+                DOCUMENT_SELECT_VECTOR,
+                (json.dumps(query_embedding),),
             )
             results = await asyncio.to_thread(cursor.fetchall)
             return [
@@ -292,7 +282,7 @@ async def generate_response(
     sql_server_available = True
     try:
         if overall_error is None:
-            sql_server_results = await _search_sql_server(query)
+            sql_server_results = await _search_sql_server(embedding)
             sql_server_available = sql_server_results is not None
     except Exception as e:
         sql_server_available = False
@@ -338,7 +328,7 @@ async def generate_response(
 
     # LLM integration
     final_response_text = ""
-    if llm_pipeline:
+    if llm_client:
         prompt = (
             f"Given the following context: {os.linesep}"
             + "\n".join(combined_context)
@@ -346,14 +336,8 @@ async def generate_response(
             + f"{query}{os.linesep}Answer:"
         )
         try:
-            # Generate text using the LLM pipeline
-            llm_result = await asyncio.to_thread(
-                llm_pipeline,
-                prompt,
-                max_new_tokens=100,
-                num_return_sequences=1,
-            )
-            generated_text = llm_result[0]["generated_text"]
+            # Generate text using the LLM client
+            generated_text = await llm_client.invoke(prompt)
             # Extract only the answer part
             # if the prompt is included in the output
             if isinstance(generated_text, str) and generated_text.startswith(prompt):

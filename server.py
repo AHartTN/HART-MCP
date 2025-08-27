@@ -12,7 +12,9 @@ from routes.mcp import mcp_router
 from routes.retrieve import retrieve_router
 from routes.status import status_router
 
-app = FastAPI()
+from security import get_api_key
+
+app = FastAPI(dependencies=[Depends(get_api_key)])
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

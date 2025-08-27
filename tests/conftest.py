@@ -80,20 +80,20 @@ def mock_neo4j_driver():
 
 @pytest.fixture
 def client(
-    # mock_llm_client: MockLLMClient,
-    # mock_sql_connection: MagicMock,
-    # mock_milvus_client: MagicMock,
-    # mock_neo4j_driver: MagicMock,
+    mock_llm_client: MockLLMClient,
+    mock_sql_connection: MagicMock,
+    mock_milvus_client: MagicMock,
+    mock_neo4j_driver: MagicMock,
 ) -> TestClient:
     """
     Provides a FastAPI TestClient with all external dependencies (LLM, DBs)
     overridden by our mock instances.
     """
     # Override dependencies
-    # app.dependency_overrides[LLMClient] = lambda: mock_llm_client
-    # app.dependency_overrides[get_sql_server_connection] = lambda: mock_sql_connection
-    # app.dependency_overrides[get_milvus_client] = lambda: mock_milvus_client
-    # app.dependency_overrides[get_neo4j_driver] = lambda: mock_neo4j_driver
+    app.dependency_overrides[LLMClient] = lambda: mock_llm_client
+    app.dependency_overrides[get_sql_server_connection] = lambda: mock_sql_connection
+    app.dependency_overrides[get_milvus_client] = lambda: mock_milvus_client
+    app.dependency_overrides[get_neo4j_driver] = lambda: mock_neo4j_driver
 
     with TestClient(app) as test_client:
         yield test_client

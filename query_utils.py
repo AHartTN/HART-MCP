@@ -1,5 +1,6 @@
 import asyncio  # Import asyncio
 from contextlib import asynccontextmanager  # Import asynccontextmanager
+import json
 
 # All query templates and connection/context managers in one place.
 
@@ -7,6 +8,11 @@ from contextlib import asynccontextmanager  # Import asynccontextmanager
 AGENTLOGS_SELECT_EVALUATION = "SELECT Evaluation FROM AgentLogs WHERE LogID = ?"
 AGENTLOGS_UPDATE_EVALUATION = "UPDATE AgentLogs SET Evaluation = ? WHERE LogID = ?"
 DOCUMENT_SELECT_LIKE = "SELECT * FROM Documents WHERE DocumentContent LIKE ?"
+DOCUMENT_SELECT_VECTOR = """
+SELECT TOP 5 DocumentContent, COSINE_DISTANCE(Embedding, JSON_QUERY(?)) AS CosineDistance
+FROM Chunks
+ORDER BY CosineDistance DESC
+"""
 AGENTLOG_INSERT = (
     "INSERT INTO AgentLogs (AgentID, QueryContent, ThoughtTree) " "VALUES (?, ?, ?);"
 )
@@ -82,3 +88,51 @@ def execute_neo4j_query(driver, query: str, params: dict | None = None):
 
 
 # Add Milvus execution helpers as needed
+
+async def insert_document(
+    cursor,
+    document_id: str,
+    text: str,
+    metadata: dict | None = None,
+) -> None:
+    """
+    Assumes an active cursor is provided.
+    """
+    loop = asyncio.get_event_loop()
+    metadata_json = json.dumps(metadata) if metadata else None
+    await loop.run_in_executor(
+        None,
+        cursor.execute,
+        "INSERT INTO Documents (DocumentID, Text, Metadata) VALUES (?, ?, ?)",
+        document_id,
+        text,
+        metadata_json,
+    )
+
+
+async def insert_chunk(
+    cursor,
+    chunk_id: str,
+    document_id: str,
+    text: str,
+    embedding: str,
+    model_name: str,
+    model_version: str,
+) -> None:
+    """
+    Inserts a new chunk into the Chunks table.
+    Assumes an active cursor is provided.
+    """
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None,
+        cursor.execute,
+        "INSERT INTO Chunks (ChunkID, DocumentID, Text, Embedding, ModelName, "
+        "ModelVersion) VALUES (?, ?, ?, ?, ?, ?)",
+        chunk_id,
+        document_id,
+        text,
+        embedding,
+        model_name,
+        model_version,
+    )

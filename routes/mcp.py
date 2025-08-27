@@ -1,9 +1,4 @@
-import asyncio
-import json
-import uuid
-from datetime import datetime
-
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from db_connectors import get_sql_server_connection
@@ -24,8 +19,9 @@ from plugins_folder.tools import (
     WriteToSharedStateTool,
 )
 from project_state import ProjectState
+from security import get_api_key
 
-mcp_router = APIRouter()
+mcp_router = APIRouter(dependencies=[Depends(get_api_key)])
 
 # In-memory storage for mission queues. A more robust solution would use Redis or a similar message broker.
 mission_queues = {}
@@ -46,31 +42,25 @@ async def run_agent_mission(
     try:
         # Database logging (robust async context manager)
         # Use async context manager to get the actual connection object
-        # async with get_sql_server_connection() as conn:
-        #     from query_utils import sql_server_connection_context
+        async with get_sql_server_connection() as conn:
+            from query_utils import sql_server_connection_context, AGENTLOG_INSERT, execute_sql_query
 
-        #     async with sql_server_connection_context(conn) as (conn, cursor):
-        #         # Ensure columns match schema: AgentId, MissionId, Timestamp, LogType, LogData
-        #         await asyncio.to_thread(
-        #             cursor.execute,
-        #             (
-        #                 "INSERT INTO AgentLogs (AgentID, QueryContent, ResponseContent, ThoughtTree, BDIState, Evaluation, RetrievedChunks, CreatedAt) "
-        #                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-        #             ),
-        #             agent_id,
-        #             json.dumps({"query": query}),
-        #             json.dumps({}),  # ResponseContent
-        #             json.dumps({}),  # ThoughtTree
-        #             json.dumps({}),  # BDIState
-        #             json.dumps({}),  # Evaluation
-        #             json.dumps({}),  # RetrievedChunks
-        #             datetime.utcnow(),
-        #         )
-        #         await asyncio.to_thread(conn.commit)
-        #         log_id = await asyncio.to_thread(getattr, cursor, "lastrowid", None)
-        #         if log_id is None:
-        #             log_id = 0
-        log_id = 0 # Temporarily set log_id to 0
+            async with sql_server_connection_context(conn) as (conn, cursor):
+                # Ensure columns match schema: AgentId, QueryContent, ThoughtTree
+                await asyncio.to_thread(
+                    execute_sql_query,
+                    cursor,
+                    AGENTLOG_INSERT,
+                    (
+                        agent_id,
+                        json.dumps({"query": query}),
+                        json.dumps({}),  # ThoughtTree - initial empty
+                    ),
+                )
+                await asyncio.to_thread(conn.commit)
+                log_id = await asyncio.to_thread(getattr, cursor, "lastrowid", None)
+                if log_id is None:
+                    log_id = 0
 
         # Agent and tool setup
         # llm_client = LLMClient() # THIS LINE IS REMOVED

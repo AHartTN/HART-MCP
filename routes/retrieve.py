@@ -1,14 +1,15 @@
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 
 from db_connectors import get_milvus_client
 from rag_pipeline import get_embedding
+from security import get_api_key
 
 logger = logging.getLogger(__name__)
 
-retrieve_router = APIRouter()
+retrieve_router = APIRouter(dependencies=[Depends(get_api_key)])
 
 
 @retrieve_router.post("/retrieve")
