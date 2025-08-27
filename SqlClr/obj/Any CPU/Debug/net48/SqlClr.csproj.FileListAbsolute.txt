@@ -1,0 +1,10 @@
+e:\Repositories\Github\HART-MCP\SqlClr\obj\Any CPU\Debug\net48\SqlClr.csproj.AssemblyReference.cache
+e:\Repositories\Github\HART-MCP\SqlClr\obj\Any CPU\Debug\net48\SqlClr.GeneratedMSBuildEditorConfig.editorconfig
+e:\Repositories\Github\HART-MCP\SqlClr\obj\Any CPU\Debug\net48\SqlClr.AssemblyInfoInputs.cache
+e:\Repositories\Github\HART-MCP\SqlClr\obj\Any CPU\Debug\net48\SqlClr.AssemblyInfo.cs
+e:\Repositories\Github\HART-MCP\SqlClr\obj\Any CPU\Debug\net48\SqlClr.csproj.CoreCompileInputs.cache
+e:\Repositories\Github\HART-MCP\SqlClr\obj\Any CPU\Debug\net48\SqlClr.sourcelink.json
+e:\Repositories\Github\HART-MCP\SqlClr\bin\Any CPU\Debug\net48\SqlClr.dll.dll
+e:\Repositories\Github\HART-MCP\SqlClr\bin\Any CPU\Debug\net48\SqlClr.dll.pdb
+e:\Repositories\Github\HART-MCP\SqlClr\obj\Any CPU\Debug\net48\SqlClr.dll.dll
+e:\Repositories\Github\HART-MCP\SqlClr\obj\Any CPU\Debug\net48\SqlClr.dll.pdb
