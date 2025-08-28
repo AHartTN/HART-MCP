@@ -83,10 +83,10 @@ async def run_agent_mission(
 
             specialist_tool_registry = ToolRegistry()
             specialist_tool_registry.register_tool(RAGTool())
-            specialist_tool_registry.register_tool(TreeOfThoughtTool())
+            specialist_tool_registry.register_tool(TreeOfThoughtTool(llm_client=llm_client))
             specialist_tool_registry.register_tool(FinishTool())
-            specialist_tool_registry.register_tool(WriteToSharedStateTool())
-            specialist_tool_registry.register_tool(ReadFromSharedStateTool())
+            specialist_tool_registry.register_tool(WriteToSharedStateTool(project_state=project_state))
+            specialist_tool_registry.register_tool(ReadFromSharedStateTool(project_state=project_state))
             specialist_tool_registry.register_tool(SendClarificationTool())
             from plugins_folder.tools import SQLQueryTool
 
@@ -110,7 +110,7 @@ async def run_agent_mission(
             project_state=project_state,
         )
 
-        delegate_tool = DelegateToSpecialistTool()
+        delegate_tool = DelegateToSpecialistTool(specialist_agent=specialist_agent)
 
         orchestrator_tool_registry = ToolRegistry()
         orchestrator_tool_registry.register_tool(delegate_tool)
@@ -136,7 +136,7 @@ async def run_agent_mission(
         )
 
         # Run the mission
-        final_result = await orchestrator_agent.run(query, log_id, update_callback)
+        final_result = await orchestrator_agent.run(query, log_id)
         await update_callback({"status": "completed", "result": final_result})
 
     except Exception as e:

@@ -81,16 +81,95 @@ class CDCConsumer:
         return None
 
     async def _sync_agent_to_milvus(self, agent_id, payload, operation_type):
+        """Sync agent data to Milvus by creating embeddings of agent text data."""
         logger.info(
             f"Syncing agent {agent_id} to Milvus (Operation: {operation_type})..."
         )
-        # Milvus typically stores document/chunk embeddings, not raw agent data.
-        # This is a placeholder for potential future use if agent-related text needs embedding.
-        pass
+        try:
+            if operation_type in ["INSERT", "UPDATE"] and payload:
+                # Extract text content from agent data for embedding
+                text_content = self._extract_agent_text_content(payload)
+                if not text_content:
+                    logger.debug(f"No text content found for agent {agent_id}, skipping Milvus sync")
+                    return
+                
+                # Generate embedding
+                embedding = await get_embedding(text_content)
+                if not embedding:
+                    logger.warning(f"Failed to generate embedding for agent {agent_id}")
+                    return
+                
+                async with milvus_connection_context() as milvus_client:
+                    if milvus_client:
+                        # Prepare data for insertion
+                        data = [{
+                            "id": f"agent_{agent_id}",
+                            "document_id": f"agent_{agent_id}",
+                            "text": text_content[:1000],  # Limit text length
+                            "embedding": embedding,
+                            "metadata": json.dumps({
+                                "type": "agent_data",
+                                "agent_id": agent_id,
+                                "operation": operation_type,
+                                "timestamp": payload.get("timestamp") if payload else None
+                            })
+                        }]
+                        
+                        # Insert/update in Milvus
+                        milvus_client.upsert(collection_name="default_collection", data=data)
+                        logger.info(f"Agent {agent_id} synced to Milvus successfully")
+                    else:
+                        logger.error("Milvus client not available")
+        except Exception as e:
+            logger.error(f"Error syncing agent {agent_id} to Milvus: {e}\n{traceback.format_exc()}")
 
     async def _delete_agent_from_milvus(self, agent_id):
+        """Delete agent data from Milvus."""
         logger.info(f"Deleting agent {agent_id} from Milvus...")
-        pass
+        try:
+            async with milvus_connection_context() as milvus_client:
+                if milvus_client:
+                    # Delete by ID
+                    milvus_client.delete(
+                        collection_name="default_collection",
+                        filter=f"id == 'agent_{agent_id}'"
+                    )
+                    logger.info(f"Agent {agent_id} deleted from Milvus successfully")
+                else:
+                    logger.error("Milvus client not available for deletion")
+        except Exception as e:
+            logger.error(f"Error deleting agent {agent_id} from Milvus: {e}\n{traceback.format_exc()}")
+
+    def _extract_agent_text_content(self, payload):
+        """Extract meaningful text content from agent payload for embedding."""
+        if not payload or not isinstance(payload, dict):
+            return None
+            
+        text_parts = []
+        
+        # Extract common agent fields
+        if "name" in payload:
+            text_parts.append(f"Name: {payload['name']}")
+        if "role" in payload:
+            text_parts.append(f"Role: {payload['role']}")
+        if "description" in payload:
+            text_parts.append(f"Description: {payload['description']}")
+        if "capabilities" in payload:
+            text_parts.append(f"Capabilities: {payload['capabilities']}")
+        if "status" in payload:
+            text_parts.append(f"Status: {payload['status']}")
+            
+        # Extract BDI state if present
+        if "BDIState" in payload:
+            try:
+                bdi_data = json.loads(payload["BDIState"]) if isinstance(payload["BDIState"], str) else payload["BDIState"]
+                if "beliefs" in bdi_data:
+                    beliefs_summary = str(bdi_data["beliefs"])[:200]
+                    text_parts.append(f"Beliefs: {beliefs_summary}")
+            except Exception:
+                pass
+        
+        return " | ".join(text_parts) if text_parts else None
 
     async def _sync_agent_to_neo4j(self, agent_id, payload, operation_type):
         logger.info(
@@ -151,35 +230,135 @@ class CDCConsumer:
             if milvus_client:
                 try:
                     if operation_type == "INSERT" or operation_type == "UPDATE":
-                        # Milvus stores chunks, not full documents directly. This is a placeholder.
-                        # Actual document content would be processed into chunks and then synced.
-                        logger.warning(
-                            f"Document {document_id} change detected. Milvus sync for full documents is a placeholder. Chunks should be synced separately."
-                        )
+                        # Process document into chunks and sync to Milvus
+                        await self._sync_document_chunks_to_milvus(document_id, payload, operation_type)
                     elif operation_type == "DELETE":
-                        # When a document is deleted, its associated chunks should also be deleted from Milvus.
-                        # This requires querying for chunks related to this document_id and deleting them.
-                        logger.info(
-                            f"Document {document_id} deleted. Placeholder for deleting associated chunks from Milvus."
-                        )
+                        # Delete all chunks associated with this document from Milvus
+                        await self._delete_document_chunks_from_milvus(document_id)
                 except Exception as e:
                     logger.error(
                         f"Error syncing document {document_id} to Milvus: {e}\n{traceback.format_exc()}"
                     )
 
-    async def _delete_document_from_milvus(self, document_id):
-        logger.info(f"Deleting document {document_id} from Milvus...")
+    async def _sync_document_chunks_to_milvus(self, document_id, payload, operation_type):
+        """Process document into chunks and sync to Milvus."""
+        logger.info(f"Syncing document {document_id} chunks to Milvus (Operation: {operation_type})...")
+        
+        try:
+            # Extract document content
+            content = payload.get("Content", "")
+            title = payload.get("Title", f"Document {document_id}")
+            source_url = payload.get("SourceURL", "")
+            
+            if not content:
+                logger.warning(f"Document {document_id} has no content to process")
+                return
+            
+            # Import chunking and embedding functionality
+            from services.text_processing import chunk_text
+            from services.embedding_service import EmbeddingService
+            
+            # Split document into chunks
+            chunks = chunk_text(content, chunk_size=512, overlap=50)
+            logger.info(f"Document {document_id} split into {len(chunks)} chunks")
+            
+            # Get embeddings for chunks
+            embedding_service = EmbeddingService()
+            
+            # Prepare chunk data for Milvus
+            chunk_data = []
+            for i, chunk in enumerate(chunks):
+                try:
+                    # Generate embedding for chunk
+                    embedding = await embedding_service.get_embedding(chunk)
+                    
+                    chunk_data.append({
+                        "id": f"{document_id}_{i}",
+                        "document_id": int(document_id),
+                        "chunk_index": i,
+                        "text": chunk,
+                        "title": title,
+                        "source_url": source_url,
+                        "embedding": embedding
+                    })
+                except Exception as e:
+                    logger.error(f"Failed to generate embedding for chunk {i} of document {document_id}: {e}")
+                    continue
+            
+            if not chunk_data:
+                logger.warning(f"No valid chunks generated for document {document_id}")
+                return
+            
+            # Insert chunks into Milvus
+            async with milvus_connection_context() as milvus_client:
+                if milvus_client:
+                    try:
+                        # For UPDATE operations, delete existing chunks first
+                        if operation_type == "UPDATE":
+                            await self._delete_document_chunks_from_milvus(document_id)
+                        
+                        # Insert new chunks
+                        from config import MILVUS_COLLECTION
+                        
+                        # Prepare data for Milvus insert
+                        ids = [chunk["id"] for chunk in chunk_data]
+                        document_ids = [chunk["document_id"] for chunk in chunk_data]
+                        chunk_indices = [chunk["chunk_index"] for chunk in chunk_data]
+                        texts = [chunk["text"] for chunk in chunk_data]
+                        titles = [chunk["title"] for chunk in chunk_data]
+                        source_urls = [chunk["source_url"] for chunk in chunk_data]
+                        embeddings = [chunk["embedding"] for chunk in chunk_data]
+                        
+                        insert_data = [
+                            ids,
+                            document_ids,
+                            chunk_indices,
+                            texts,
+                            titles,
+                            source_urls,
+                            embeddings
+                        ]
+                        
+                        result = await asyncio.to_thread(
+                            milvus_client.insert,
+                            collection_name=MILVUS_COLLECTION,
+                            data=insert_data
+                        )
+                        
+                        logger.info(f"Successfully inserted {len(chunk_data)} chunks for document {document_id} into Milvus")
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to insert chunks into Milvus for document {document_id}: {e}")
+                        
+        except Exception as e:
+            logger.error(f"Error processing document {document_id} for Milvus sync: {e}\n{traceback.format_exc()}")
+
+    async def _delete_document_chunks_from_milvus(self, document_id):
+        """Delete all chunks associated with a document from Milvus."""
+        logger.info(f"Deleting chunks for document {document_id} from Milvus...")
+        
         async with milvus_connection_context() as milvus_client:
             if milvus_client:
                 try:
-                    # Placeholder for deleting all chunks associated with this document_id
-                    logger.info(
-                        f"Placeholder: Deleting all chunks for document {document_id} from Milvus."
+                    from config import MILVUS_COLLECTION
+                    
+                    # Delete all chunks with matching document_id
+                    expr = f"document_id == {document_id}"
+                    
+                    result = await asyncio.to_thread(
+                        milvus_client.delete,
+                        collection_name=MILVUS_COLLECTION,
+                        expr=expr
                     )
+                    
+                    logger.info(f"Successfully deleted chunks for document {document_id} from Milvus")
+                    
                 except Exception as e:
-                    logger.error(
-                        f"Error deleting document {document_id} from Milvus: {e}\n{traceback.format_exc()}"
-                    )
+                    logger.error(f"Failed to delete chunks for document {document_id} from Milvus: {e}")
+
+    async def _delete_document_from_milvus(self, document_id):
+        """Legacy method - redirects to chunk deletion."""
+        await self._delete_document_chunks_from_milvus(document_id)
 
     async def _sync_document_to_neo4j(self, document_id, payload, operation_type):
         logger.info(

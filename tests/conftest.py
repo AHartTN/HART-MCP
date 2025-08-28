@@ -16,7 +16,7 @@ class MockLLMClient:
 
     def __init__(self):
         """Initializes the mock, allowing response or error configuration."""
-        self.response = ""
+        self.response = '{"thought": "Mock thought.", "action": {"tool_name": "finish", "parameters": {"response": "Mocked default response."}}}'
         self.error = None
 
     async def invoke(self, prompt: str) -> str:
@@ -84,6 +84,7 @@ def client(
     mock_sql_connection: MagicMock,
     mock_milvus_client: MagicMock,
     mock_neo4j_driver: MagicMock,
+    monkeypatch: pytest.MonkeyPatch, # Add monkeypatch fixture
 ) -> TestClient:
     """
     Provides a FastAPI TestClient with all external dependencies (LLM, DBs)
@@ -94,6 +95,12 @@ def client(
     app.dependency_overrides[get_sql_server_connection] = lambda: mock_sql_connection
     app.dependency_overrides[get_milvus_client] = lambda: mock_milvus_client
     app.dependency_overrides[get_neo4j_driver] = lambda: mock_neo4j_driver
+
+    # Mock LLMClient.invoke directly on the class with dynamic response
+    async def mock_invoke(self, prompt: str) -> str:
+        return mock_llm_client.response
+    
+    monkeypatch.setattr(LLMClient, "invoke", mock_invoke)
 
     with TestClient(app) as test_client:
         yield test_client

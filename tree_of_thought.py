@@ -3,7 +3,7 @@ import json
 import logging
 
 from db_connectors import get_sql_server_connection
-from rag_pipeline import generate_response
+from llm_connector import LLMClient
 
 
 def prune_tree(root, min_score=0):
@@ -58,9 +58,10 @@ logger = logging.getLogger(__name__)
 
 
 async def update_agent_log_thought_tree(
-    sql_server_conn, log_id: int, thought_tree_json: str
+    sql_server_conn,
+    log_id: int,
+    thought_tree_json: str
 ):
-    # Commit is handled after initial insert in initiate_tree_of_thought
     """Updates the ThoughtTree JSON column in AgentLogs table."""
     cursor = await asyncio.to_thread(sql_server_conn.cursor)
     await asyncio.to_thread(
@@ -70,43 +71,33 @@ async def update_agent_log_thought_tree(
         log_id,
     )
 
-
-async def expand_thought_tree(
-    sql_server_conn, thought, agent_id, log_id, depth=0, max_depth=2
-):
-    """Recursively expands the ThoughtTree and updates the database after each expansion."""
+async def expand_thought_tree(thought: Thought, llm_client: LLMClient):
+    """Expands a thought by generating and evaluating child thoughts."""
+    # Generate child thoughts
+    generation_prompt = f"Given the thought \"{thought.text}\", generate 3 possible next thoughts as a JSON list of strings."
     try:
-        if depth < max_depth:
-            child_text = f"Expanded thought at depth {depth + 1}"
-            child_thought = Thought(child_text, score=depth + 1, log_id=log_id)
-            thought.children.append(child_thought)
-            # Ensure two children for test compatibility
-            if len(thought.children) == 1:
-                extra_child = Thought(
-                    "extra subthought", score=depth + 1, log_id=log_id
-                )
-                thought.children.append(extra_child)
-                # Update for both children
-                await update_agent_log_thought_tree(
-                    sql_server_conn, log_id, json.dumps(thought.to_dict())
-                )
-                # Update the ThoughtTree in SQL Server after each expansion
-                await update_agent_log_thought_tree(
-                    sql_server_conn, log_id, json.dumps(thought.to_dict())
-                )
-            # Ensure generate_response is called for each expansion
-            await generate_response(child_text)
-            await expand_thought_tree(
-                sql_server_conn, child_thought, agent_id, log_id, depth + 1, max_depth
-            )
-    except Exception as e:
-        logger.error(
-            "Error expanding ThoughtTree for AgentID %s: %s", agent_id, e, exc_info=True
-        )
-        return False
+        response_text = await llm_client.invoke(generation_prompt)
+        child_thought_texts = json.loads(response_text)
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.error(f"Error decoding LLM response for thought generation: {e}")
+        return
+
+    # Evaluate child thoughts
+    for child_text in child_thought_texts:
+        evaluation_prompt = f"Evaluate the following thought on a scale of 0 to 1, where 1 is the best: \"{child_text}\". Respond with a JSON object with a single key, 'score'."
+        try:
+            response_text = await llm_client.invoke(evaluation_prompt)
+            score_data = json.loads(response_text)
+            score = float(score_data.get('score', 0.0))
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            logger.error(f"Error decoding LLM response for thought evaluation: {e}")
+            score = 0.0
+        
+        child_thought = Thought(child_text, score=score, parent=thought, log_id=thought.log_id)
+        thought.add_child(child_thought)
 
 
-async def initiate_tree_of_thought(initial_query, agent_id):
+async def initiate_tree_of_thought(initial_query, agent_id, llm_client: LLMClient):
     conn = await get_sql_server_connection()
     if not conn:
         return None
@@ -121,19 +112,21 @@ async def initiate_tree_of_thought(initial_query, agent_id):
         )
         log_id = await asyncio.to_thread(getattr, cursor, "lastrowid", None)
         root_thought = Thought(initial_query, log_id=log_id)
-        # Update the ThoughtTree with the root thought initially
+        
+        await expand_thought_tree(root_thought, llm_client)
+
         if log_id is not None:
             await update_agent_log_thought_tree(
                 conn, log_id, json.dumps(root_thought.to_dict())
             )
-        await expand_thought_tree(conn, root_thought, agent_id, log_id)
-        await asyncio.to_thread(conn.commit)  # Commit once at the end
+        
+        await asyncio.to_thread(conn.commit)
         return root_thought
     except Exception as e:
         logger.error(f"Error in initiate_tree_of_thought: {e}", exc_info=True)
         if conn:
-            await asyncio.to_thread(conn.rollback)  # Rollback on error
+            await asyncio.to_thread(conn.rollback)
         return None
     finally:
         if conn:
-            await asyncio.to_thread(conn.close)  # Close connection
+            await asyncio.to_thread(conn.close)

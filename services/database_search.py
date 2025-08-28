@@ -82,16 +82,27 @@ async def search_milvus_async(embedding: List[float]) -> List[Dict[str, Any]]:
 
 
 async def search_neo4j(neo4j_driver, query: str) -> List[str]:
-    """Search for relevant nodes in Neo4j."""
+    """Search for relevant nodes and their relationships in Neo4j."""
     if not neo4j_driver:
         logger.error("Neo4j driver is not available.")
-        return []  # Return empty list if driver is not available
+        return []
 
     try:
         async with neo4j_driver.session() as session:
             result = await session.run(SEARCH_NODES_CONTAINS_TEXT, {"query": query})
             records = await result.data()
-            return [record["text"] for record in records]
+            
+            formatted_results = []
+            for record in records:
+                node_text = record["text"]
+                related_info = record.get("related_info", []) # Safely get 'related_info'
+                
+                formatted_entry = f"Node: {node_text}"
+                if related_info:
+                    for rel in related_info:
+                        formatted_entry += f", Relationship: {rel['relationship']}, Related Node: {rel['related_text']}"
+                formatted_results.append(formatted_entry)
+            return formatted_results
     except (RuntimeError, ValueError, TypeError) as e:
         logger.error(
             (
@@ -118,51 +129,6 @@ async def search_neo4j_async(query: str) -> List[str]:
         logger.error(
             (
                 "An error occurred during Neo4j search: %s\n%s",
-                e,
-                traceback.format_exc(),
-            )
-        )
-        return []
-
-
-async def search_sql_server_async(
-    query_embedding: List[float], sql_server_conn=None
-) -> List[Dict[str, Any]]:
-    """Asynchronously search SQL Server."""
-    # Note: sql_server_conn parameter is ignored since sql_connection_context()
-    # handles connection management internally
-    try:
-        async with sql_connection_context() as (
-            conn,
-            cursor,
-        ):
-            if not conn:
-                logging.error(
-                    "SQL Server connection is not available. "
-                    "Cannot proceed with SQL Server search."
-                )
-                return []
-
-            await asyncio.to_thread(
-                execute_sql_query,
-                cursor,
-                DOCUMENT_SELECT_VECTOR,
-            )
-            results = await asyncio.to_thread(cursor.fetchall)
-            return [
-                dict(
-                    zip(
-                        [column[0] for column in cursor.description],
-                        row,
-                        strict=True,
-                    )
-                )
-                for row in results
-            ]
-    except (RuntimeError, ValueError, TypeError) as e:
-        logger.error(
-            (
-                "SQL Server semantic search failed: %s\n%s",
                 e,
                 traceback.format_exc(),
             )

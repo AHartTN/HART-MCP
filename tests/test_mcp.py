@@ -1,6 +1,7 @@
 # In tests/test_mcp.py
 import pytest
 from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock # Added this line
 
 from llm_connector import LLMClient
 from tests.conftest import MockLLMClient
@@ -19,16 +20,8 @@ async def test_mcp_golden_path(
     # Arrange: Configure the mock LLM to return a predictable final answer.
     # This simulates the agent thinking and deciding to finish the mission.
     final_answer = "The mission was a success."
-    mock_llm_client.response = (
-        '''{"thought": "I have the final answer.", "action": {"tool_name": "finish", "parameters": {"response": "'''
-        + final_answer
-        + """"}}}"""
-    )
-
-    # Mock LLMClient instantiation within run_agent_mission
-    monkeypatch.setattr(
-        LLMClient, "__new__", lambda cls, *args, **kwargs: mock_llm_client
-    )
+    mock_llm_client.response = f'{{"thought": "I have the final answer.", "action": {{"tool_name": "finish", "parameters": {{"response": "{final_answer}"}}}}}}'
+    
 
     # Act: Call the MCP endpoint with a mission.
     mission_payload = {"query": "Test mission", "agent_id": 1}

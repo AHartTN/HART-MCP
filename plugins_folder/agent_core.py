@@ -4,10 +4,11 @@ import json
 import logging
 from typing import Callable, Dict, List, Optional
 
-from llm_connector import LLMClient  # Import the new LLMClient
+from llm_connector import LLMClient
 from project_state import ProjectState
 from prompts import AGENT_CONSTITUTION
 from utils import sql_connection_context
+from plugins_folder.base_agent import BaseAgent
 
 
 def get_utc_timestamp():
@@ -17,7 +18,7 @@ def get_utc_timestamp():
 logger = logging.getLogger(__name__)
 
 
-class SpecialistAgent:
+class SpecialistAgent(BaseAgent):
     def __init__(
         self,
         agent_id: int,
@@ -28,15 +29,9 @@ class SpecialistAgent:
         update_callback: Optional[Callable] = None,
         project_state: Optional[ProjectState] = None,
     ):
-        self.agent_id = agent_id
-        self.name = name
-        self.role = role
-        self.bdi_state = {"beliefs": {}, "desires": [], "intentions": []}
-        self.tool_registry = tool_registry
-        self.scratchpad = []  # Initialize scratchpad as an empty list
-        self.llm = llm_client  # Store the LLMClient instance
-        self.update_callback = update_callback  # Store the update callback
-        self.project_state = project_state
+        super().__init__(
+            agent_id, name, role, tool_registry, llm_client, update_callback, project_state
+        )
 
     @classmethod
     async def load_from_db(
@@ -47,8 +42,6 @@ class SpecialistAgent:
         update_callback: Optional[Callable] = None,
         project_state: Optional[ProjectState] = None,
     ):
-        # For testing purposes, we will not load from the database.
-        # Instead, we will create a new agent directly.
         return cls(
             agent_id,
             f"Specialist_{agent_id}",
@@ -59,255 +52,22 @@ class SpecialistAgent:
             project_state,
         )
 
-    async def update_bdi_state(
-        self,
-        log_id: int,
-        new_beliefs: Dict = None,
-        new_desires: List = None,
-        new_intentions: List = None,
-    ):
-        async with sql_connection_context() as (sql_server_conn, cursor):
-            if cursor is None or not hasattr(cursor, "execute"):
-                if sql_server_conn and hasattr(sql_server_conn, "close"):
-                    await asyncio.to_thread(
-                        sql_server_conn.close
-                    )  # Ensure close is awaited if it's blocking
-                logger.error("Failed to obtain database cursor for BDI state update.")
-                return
-            try:
-                if new_beliefs:
-                    self.bdi_state["beliefs"].update(new_beliefs)
-                if new_desires:
-                    self.bdi_state["desires"].extend(new_desires)
-                if new_intentions:
-                    self.bdi_state["intentions"].extend(new_intentions)
-
-                await asyncio.to_thread(
-                    cursor.execute,
-                    "UPDATE AgentLogs SET BDIState = ? WHERE LogID = ?",
-                    json.dumps(self.bdi_state),
-                    log_id,
-                )
-                if hasattr(sql_server_conn, "commit"):
-                    await asyncio.to_thread(sql_server_conn.commit)
-                logger.info(
-                    "Updated BDIState for LogID %s for agent %s.",
-                    log_id,
-                    self.name,
-                )
-            except RuntimeError as exc:
-                logger.error(
-                    "Error updating BDIState for LogID %s: %s",
-                    log_id,
-                    exc,
-                )
-
     async def run(
         self,
         mission_prompt: str,
         log_id: int,
         update_callback: Optional[Callable] = None,
     ) -> dict:
-        logger.info(f"Agent {self.name} starting mission: {mission_prompt}")
-        self.scratchpad = [
-            f"Mission: {mission_prompt}"
-        ]  # Initialize scratchpad as a list
-        final_answer = None
-
-        if self.update_callback:
-            await self.update_callback(
-                {
-                    "type": "mission_start",
-                    "content": mission_prompt,
-                    "agent_name": self.name,
-                }
-            )
-
-        for step in range(10):  # Max 10 steps for the cognitive loop
-            # b. Reason: Construct a detailed system prompt.
-            system_prompt = AGENT_CONSTITUTION
-            # Add agent-specific persona to the system prompt
-            persona_details = (
-                f"You are {self.name}, an AI agent with the role of {self.role}.\n"
-            )
-            system_prompt = persona_details + system_prompt
-            available_tools = ", ".join(self.tool_registry.get_tool_names())
-            scratchpad_content = "\n".join(self.scratchpad)
-
-            llm_prompt = f"""{system_prompt}
-Overall Mission: {mission_prompt}
-Available Tools: {available_tools}
-Scratchpad History:
-{scratchpad_content}
-Your next response MUST be a JSON object with two keys: 'thought' (string) and 'action' (object). The 'action' object MUST have two keys: 'tool_name' (string, name of the tool to use) and 'parameters' (object, a dictionary of named parameters for the tool). If you have completed the mission, use the 'FinishTool' and provide the final answer as the 'response' parameter.
-Example: {{'thought': 'I need to use the RAG tool to get more information.', 'action': {{'tool_name': 'RAG Tool', 'parameters': {{'query': 'information about X'}}}}}} """
-            logger.info(f"LLM Prompt for step {step}:\n{llm_prompt}")
-
-            if self.update_callback:
-                await self.update_callback(
-                    {
-                        "type": "thought_process",
-                        "content": f"Step {step}: Reasoning...",
-                        "agent_name": self.name,
-                    }
-                )
-
-            # c. Call self.llm.invoke(prompt) to get the agent's next thought and action.
-            if hasattr(self.llm.invoke, "__await__"):
-                llm_response_text = await self.llm.invoke(llm_prompt)
-            else:
-                llm_response_text = self.llm.invoke(llm_prompt)
-            logger.info(f"LLM Raw Response: {llm_response_text}")
-
-            try:
-                llm_response = json.loads(llm_response_text)
-                thought = llm_response.get("thought")
-                action = llm_response.get("action")
-
-                if (
-                    not thought
-                    or not action
-                    or "tool_name" not in action
-                    or "parameters" not in action
-                ):
-                    raise ValueError(
-                        "LLM response is not in the expected JSON format or missing keys."
-                    )
-
-                tool_name = action["tool_name"]
-                parameters_for_tool = action["parameters"]
-
-                self.scratchpad.append(f"Thought: {thought}")
-                if self.update_callback:
-                    await self.update_callback(
-                        {"type": "thought", "content": thought, "agent_name": self.name}
-                    )
-
-                # e. Act: If the chosen tool is FinishTool, break the loop and return the result.
-                if tool_name == "FinishTool":
-                    final_answer = parameters_for_tool.get("response")
-                    self.scratchpad.append(f"Final Answer: {final_answer}")
-                    if self.update_callback:
-                        await self.update_callback(
-                            {
-                                "type": "final_answer",
-                                "content": final_answer,
-                                "agent_name": self.name,
-                            }
-                        )
-                    break
-                else:
-                    logger.info(
-                        f"Attempting to use tool: {tool_name} with parameters: {parameters_for_tool}"
-                    )
-                    if self.update_callback:
-                        await self.update_callback(
-                            {
-                                "type": "action",
-                                "content": {
-                                    "tool_name": tool_name,
-                                    "parameters": parameters_for_tool,
-                                },
-                                "agent_name": self.name,
-                            }
-                        )
-
-                    tool_result = await self.tool_registry.use_tool(
-                        tool_name, **parameters_for_tool
-                    )
-                    observation = (
-                        f"Observation: Tool Result ({tool_name}): {tool_result}"
-                    )
-                    logger.info(f"Tool '{tool_name}' executed. Result: {tool_result}")
-
-                    # f. Observe: Append the tool's output (the "observation") to the scratchpad.
-                    self.scratchpad.append(observation)
-                    if self.update_callback:
-                        await self.update_callback(
-                            {
-                                "type": "observation",
-                                "content": observation,
-                                "agent_name": self.name,
-                            }
-                        )
-
-                    # Update BDI state (beliefs, desires, intentions can be updated based on tool results)
-                    self.bdi_state["beliefs"].update(
-                        {f"step_{step}_result": str(tool_result)}
-                    )
-                    await self.update_bdi_state(
-                        log_id, new_beliefs={f"step_{step}_result": str(tool_result)}
-                    )
-
-            except json.JSONDecodeError as e:
-                error_message = f"Error decoding JSON from LLM response: {e}. Response: {llm_response_text}"
-                self.scratchpad.append(f"Error: {error_message}")
-                logger.error(error_message)
-                if self.update_callback:
-                    await self.update_callback(
-                        {
-                            "type": "error",
-                            "content": error_message,
-                            "agent_name": self.name,
-                        }
-                    )
-                break
-            except ValueError as e:
-                error_message = f"Error in ReAct loop (tool selection/execution): {e}"
-                self.scratchpad.append(f"Error: {error_message}")
-                logger.error(error_message)
-                if self.update_callback:
-                    await self.update_callback(
-                        {
-                            "type": "error",
-                            "content": error_message,
-                            "agent_name": self.name,
-                        }
-                    )
-                break
-            except Exception as e:
-                error_message = f"An unexpected error occurred: {e}"
-                self.scratchpad.append(f"Error: {error_message}")
-                logger.error(error_message)
-                if self.update_callback:
-                    await self.update_callback(
-                        {
-                            "type": "error",
-                            "content": error_message,
-                            "agent_name": self.name,
-                        }
-                    )
-                break
-
-        if not final_answer:
-            final_answer = (
-                "No final answer generated within the given steps."  # Fallback
-            )
-
-        # Reflect on the scratchpad and update beliefs
-        summary_prompt = "Please summarize the following mission scratchpad, focusing on key actions, observations, and outcomes. This summary will be used to update the agent's long-term beliefs.\n\nScratchpad:\nscratchpad_content_for_summary"
-        if hasattr(self.llm.invoke, "__await__"):
-            mission_summary = await self.llm.invoke(summary_prompt)
-        else:
-            mission_summary = self.llm.invoke(summary_prompt)
-        logger.info(f"Mission Summary for BDI update: {mission_summary}")
-
-        # Update BDI state with the mission summary
-        self.bdi_state["beliefs"].update({"last_mission_summary": mission_summary})
-        await self.update_bdi_state(
-            log_id, new_beliefs={"last_mission_summary": mission_summary}
+        system_prompt_template = (
+            f"You are {{name}}, an AI agent with the role of {{role}}.\n"
+            + AGENT_CONSTITUTION
         )
-
-        # Final update of BDI state with the overall outcome
-        self.bdi_state["beliefs"].update({"final_mission_outcome": final_answer})
-        await self.update_bdi_state(
-            log_id, new_beliefs={"final_mission_outcome": final_answer}
+        return await super().run(
+            mission_prompt,
+            log_id,
+            system_prompt_template,
+            "specialist",
         )
-
-        logger.info(
-            f"Agent {self.name} completed mission with final answer: {final_answer}"
-        )
-        return {"final_response": final_answer}
 
 
 async def create_agent(

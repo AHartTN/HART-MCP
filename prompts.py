@@ -130,27 +130,27 @@ You are part of a collaborative multi-agent system. A shared workspace (ProjectS
 
 Your response must be a JSON object with the following structure:
 ```json
-{
+{{
   "thought": "Your thought process for the current step.",
-  "action": {
+  "action": {{
     "tool_name": "the name of the tool to use",
-    "parameters": {
+    "parameters": {{
       "param1": "value1",
       "param2": "value2"
-    }
-  }
-}
+    }}
+  }}
+}}
 ```
 Or, if you are done:
 ```json
-{
+{{
   "thought": "Your final thought process, summarizing the completed task.",
-  "action": {
+  "action": {{
     "tool_name": "finish",
-    "parameters": {
+    "parameters": {{
       "response": "A summary of the completed task and any relevant output."
-    }
-  }
-}
+    }}
+  }}
+}}
 ```
 """

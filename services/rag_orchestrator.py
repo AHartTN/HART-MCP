@@ -5,102 +5,106 @@ from typing import Any, Dict, List, Optional
 
 from llm_connector import LLMClient
 from plugins import call_plugin
-from services.database_search import (
-    search_milvus_async,
-    search_neo4j_async,
-    search_sql_server_async,
-)
 from services.embedding_service import EmbeddingService
+from services.unified_database_service import EnhancedUnifiedSearchService
+from utils.error_handlers import ErrorCode, safe_execute, StandardizedError
 
 logger = logging.getLogger(__name__)
 
 
 class RAGOrchestrator:
-    def __init__(self, embedding_service: EmbeddingService, llm_client: LLMClient):
+    """Enhanced RAG orchestrator with unified database service and better error handling."""
+    
+    def __init__(self, 
+                 embedding_service: EmbeddingService, 
+                 llm_client: LLMClient,
+                 unified_db_service: Optional[EnhancedUnifiedSearchService] = None):
         self.embedding_service = embedding_service
         self.llm_client = llm_client
+        self.unified_db_service = unified_db_service or EnhancedUnifiedSearchService()
+        self._logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
+    @safe_execute(ErrorCode.GENERIC_ERROR)
     async def generate_response(
         self,
         query: str,
         context: Optional[Dict[str, Any]] = None,
+        include_vector: bool = True,
+        include_graph: bool = True,
+        include_relational: bool = False,
+        limit: int = 5
     ) -> Dict[str, Any]:
-        """Generate a RAG response from Milvus, Neo4j, and SQL Server."""
-        responses = {}
-        audit_log = []
-        overall_error = None
+        """Enhanced RAG response generation with unified database service."""
+        if not query or not isinstance(query, str):
+            return self._create_error_response("Query parameter is required and must be a string")
+        
+        self._logger.info(f"Generating RAG response for query: {query[:100]}...")
+        
+        try:
+            # Generate embedding for the query
+            embedding = await self._generate_query_embedding(query)
+            if embedding is None and include_vector:
+                self._logger.warning("Failed to generate embedding, skipping vector search")
+                include_vector = False
 
-        # Generate embedding for the query
-        embedding = await self._generate_query_embedding(query)
-        if embedding is None:
-            overall_error = "Failed to generate query embedding."
+            # Perform unified database search
+            search_results = await self.unified_db_service.search_all(
+                query=query,
+                embedding=embedding,
+                limit=limit,
+                include_vector=include_vector,
+                include_graph=include_graph,
+                include_relational=include_relational
+            )
 
-        # If embedding failed, return error immediately
-        if overall_error == "Failed to generate query embedding.":
-            return {"error": overall_error}
+            # Check if any searches were successful
+            if not search_results.get("search_successful", False):
+                error_msg = "No database searches succeeded"
+                if search_results.get("errors"):
+                    error_msg += f": {'; '.join([str(e) for e in search_results['errors']])}"
+                
+                return {
+                    "final_response": error_msg,
+                    "search_results": search_results,
+                    "context_used": [],
+                    "plugin_results": None,
+                    "success": False
+                }
 
-        # Perform database searches
-        (
-            milvus_results,
-            neo4j_results,
-            sql_server_results,
-            overall_error,
-            milvus_available,
-            neo4j_available,
-            sql_server_available,
-        ) = await self._perform_database_searches(embedding, query, overall_error)
+            # Combine retrieved context for LLM
+            combined_context = self._combine_enhanced_context(search_results)
 
-        responses["milvus"] = milvus_results
-        audit_log.append(
-            {"source": "milvus", "query": query, "results": milvus_results}
-        )
-        responses["neo4j"] = neo4j_results
-        audit_log.append({"source": "neo4j", "query": query, "results": neo4j_results})
-        responses["sql_server"] = sql_server_results
-        audit_log.append(
-            {"source": "sql_server", "query": query, "results": sql_server_results}
-        )
+            # Generate LLM response
+            final_response_text = await self._generate_llm_response(query, combined_context)
 
-        # Handle overall database connection errors
-        if (
-            (not milvus_available or milvus_results == [])
-            and (not neo4j_available or neo4j_results == [])
-            and (not sql_server_available or sql_server_results == [])
-        ):
+            # Call plugins/hooks
+            plugin_results = await self._call_plugins(
+                query, context, search_results, final_response_text
+            )
+
             return {
-                "final_response": "Failed to connect to all databases.",
-                "responses": responses,
-                "audit_log": audit_log,
-                "plugin_results": None,
+                "final_response": final_response_text,
+                "search_results": search_results,
+                "context_used": combined_context,
+                "plugin_results": plugin_results,
+                "success": True,
+                "query": query,
+                "services_used": search_results.get("services_attempted", [])
             }
-
-        # If there's an overall error, return it immediately in final_response
-        if overall_error:
-            return {
-                "final_response": overall_error,
-                "responses": responses,
-                "audit_log": audit_log,
-                "plugin_results": None,
-            }
-
-        # Combine retrieved context for LLM
-        combined_context = self._combine_context(
-            milvus_results, neo4j_results, sql_server_results
-        )
-
-        # LLM integration
-        final_response_text = await self._generate_llm_response(query, combined_context)
-
-        # Plugin/tool hook
-        plugin_results = await self._call_plugins(
-            query, context, responses, final_response_text
-        )
-
+            
+        except Exception as e:
+            self._logger.error(f"Error in RAG generation: {e}", exc_info=True)
+            return self._create_error_response(f"RAG generation failed: {str(e)}")
+    
+    def _create_error_response(self, message: str) -> Dict[str, Any]:
+        """Create standardized error response."""
         return {
-            "final_response": final_response_text,
-            "responses": responses,
-            "audit_log": audit_log,
-            "plugin_results": plugin_results,
+            "final_response": message,
+            "search_results": {"vector_results": [], "graph_results": [], "errors": [message]},
+            "context_used": [],
+            "plugin_results": None,
+            "success": False,
+            "error": message
         }
 
     async def _generate_query_embedding(self, query: str) -> Optional[List[float]]:
@@ -113,61 +117,79 @@ class RAGOrchestrator:
             )
             return None
 
-    async def _perform_database_searches(
+    def _combine_enhanced_context(
         self,
-        embedding: List[float],
-        query: str,
-        overall_error: Optional[str],
-    ):
-        milvus_results = []
-        milvus_available = True
-        try:
-            if overall_error is None:
-                milvus_results = await search_milvus_async(embedding)
-                milvus_available = milvus_results is not None
-        except Exception as e:
-            milvus_available = False
-            overall_error = f"Milvus search failed: {e}"
-            logger.error(f"Milvus search failed: {e}\n{traceback.format_exc()}")
+        search_results: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Combine search results into enhanced context with source attribution."""
+        combined_context = []
+        
+        # Process vector results
+        for result in search_results.get("vector_results", []):
+            if result.get("text"):
+                combined_context.append({
+                    "text": result["text"],
+                    "source": "vector_search",
+                    "score": result.get("score", 0),
+                    "document_id": result.get("document_id"),
+                    "metadata": {
+                        "distance": result.get("distance"),
+                        "vector_id": result.get("id")
+                    }
+                })
+        
+        # Process graph results
+        for result in search_results.get("graph_results", []):
+            if result.get("text"):
+                context_entry = {
+                    "text": result["text"],
+                    "source": "graph_search",
+                    "score": 1.0,  # Graph results don't have similarity scores
+                    "metadata": {
+                        "relationships": result.get("relationships", []),
+                        "node_id": result.get("id")
+                    }
+                }
+                
+                # Add relationship information to text if available
+                if result.get("relationships"):
+                    rel_info = "; ".join([
+                        f"{rel.get('type', 'RELATED')}: {rel.get('related_text', '')}"
+                        for rel in result["relationships"][:3]  # Limit to first 3 relationships
+                    ])
+                    if rel_info:
+                        context_entry["text"] += f" [Related: {rel_info}]"
+                
+                combined_context.append(context_entry)
+        
+        # Process relational results
+        for result in search_results.get("relational_results", []):
+            if isinstance(result, dict):
+                # Convert SQL result to text representation
+                text_parts = []
+                for key, value in result.items():
+                    if key != "source" and value is not None:
+                        text_parts.append(f"{key}: {value}")
+                
+                if text_parts:
+                    combined_context.append({
+                        "text": "; ".join(text_parts),
+                        "source": "relational_search",
+                        "score": 1.0,
+                        "metadata": {"raw_result": result}
+                    })
+        
+        # Sort by score (highest first) and limit results
+        combined_context.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return combined_context[:10]  # Limit to top 10 results
 
-        neo4j_results = []
-        neo4j_available = True
-        try:
-            if overall_error is None:
-                neo4j_results = await search_neo4j_async(query)
-                neo4j_available = neo4j_results is not None
-        except Exception as e:
-            neo4j_available = False
-            overall_error = f"Neo4j search failed: {e}"
-            logger.error(f"Neo4j search failed: {e}\n{traceback.format_exc()}")
-
-        sql_server_results = []
-        sql_server_available = True
-        try:
-            if overall_error is None:
-                sql_server_results = await search_sql_server_async(embedding)
-                sql_server_available = sql_server_results is not None
-        except Exception as e:
-            sql_server_available = False
-            overall_error = f"SQL Server search failed: {e}"
-            logger.error("SQL Server search failed: %s\n%s", e, traceback.format_exc())
-
-        return (
-            milvus_results,
-            neo4j_results,
-            sql_server_results,
-            overall_error,
-            milvus_available,
-            neo4j_available,
-            sql_server_available,
-        )
-
+    # Legacy method kept for backward compatibility
     def _combine_context(
         self,
         milvus_results: List[Dict[str, Any]],
         neo4j_results: List[str],
-        sql_server_results: List[Dict[str, Any]],
     ) -> List[str]:
+        """Legacy context combination method."""
         combined_context = []
         if milvus_results:
             combined_context.extend(
@@ -175,64 +197,149 @@ class RAGOrchestrator:
             )
         if neo4j_results:
             combined_context.extend(neo4j_results)
-        if sql_server_results:
-            combined_context.extend(
-                [r["text"] for r in sql_server_results if r.get("text")]
-            )
         return combined_context
 
+    @safe_execute(ErrorCode.LLM_RESPONSE)
     async def _generate_llm_response(
-        self, query: str, combined_context: List[str]
+        self, query: str, combined_context: List[Dict[str, Any]]
     ) -> str:
-        final_response_text = ""
-        if self.llm_client:
+        """Generate LLM response with enhanced context handling."""
+        if not self.llm_client:
+            context_text = self._format_context_for_display(combined_context)
+            return (
+                f"LLM not available. Based on retrieved context:\n\n{context_text}\n\n"
+                f"This information relates to your query: {query}"
+            )
+        
+        try:
+            # Format context with source attribution
+            formatted_context = self._format_context_for_llm(combined_context)
+            
             prompt = (
-                f"Given the following context: {os.linesep}"
-                + "\n".join(combined_context)
-                + f"{os.linesep}{os.linesep}Answer the following question: "
-                + f"{query}{os.linesep}Answer:"
+                f"You are an AI assistant answering questions based on retrieved context. "
+                f"Use the following context to answer the question accurately and comprehensively.\n\n"
+                f"Context:\n{formatted_context}\n\n"
+                f"Question: {query}\n\n"
+                f"Please provide a detailed answer based on the context above. "
+                f"If the context doesn't fully address the question, say so and provide what information is available."
             )
-            try:
-                generated_text = await self.llm_client.invoke(prompt)
-                if isinstance(generated_text, str) and generated_text.startswith(
-                    prompt
-                ):
-                    final_response_text = generated_text[len(prompt) :].strip()
-                elif isinstance(generated_text, str):
-                    final_response_text = generated_text.strip()
+            
+            self._logger.debug(f"LLM prompt length: {len(prompt)} characters")
+            
+            generated_text = await self.llm_client.invoke(prompt)
+            
+            if isinstance(generated_text, str):
+                # Clean up response if it starts with the prompt
+                if generated_text.startswith(prompt):
+                    response = generated_text[len(prompt):].strip()
                 else:
-                    final_response_text = str(generated_text)
-            except Exception as e:
-                logger.error(
-                    f"LLM text generation failed: {e}\n{traceback.format_exc()}"
-                )
-                final_response_text = (
-                    (f"Error generating response with LLM. Context found: {os.linesep}")
-                    + "\n".join(combined_context)
-                    + f"{os.linesep}{os.linesep}Regarding your query: {query}"
-                )
-        else:
-            final_response_text = (
-                f"LLM not loaded. Context found: {os.linesep}"
-                + "\n".join(combined_context)
-                + f"{os.linesep}{os.linesep}Regarding your query: {query}"
+                    response = generated_text.strip()
+                
+                if not response:
+                    response = "I was unable to generate a response based on the provided context."
+                    
+                return response
+            else:
+                return str(generated_text)
+                
+        except Exception as e:
+            self._logger.error(f"LLM text generation failed: {e}", exc_info=True)
+            context_text = self._format_context_for_display(combined_context)
+            return (
+                f"Error generating LLM response: {str(e)}\n\n"
+                f"Retrieved context:\n{context_text}\n\n"
+                f"Regarding your query: {query}"
             )
-        return final_response_text
+    
+    def _format_context_for_llm(self, context: List[Dict[str, Any]]) -> str:
+        """Format context for LLM consumption with source attribution."""
+        formatted_parts = []
+        for i, ctx in enumerate(context, 1):
+            source = ctx.get("source", "unknown")
+            text = ctx.get("text", "")
+            score = ctx.get("score", 0)
+            
+            formatted_parts.append(
+                f"[Source {i} - {source.replace('_', ' ').title()} (relevance: {score:.2f})]\n{text}"
+            )
+        
+        return "\n\n".join(formatted_parts)
+    
+    def _format_context_for_display(self, context: List[Dict[str, Any]]) -> str:
+        """Format context for user display."""
+        if not context:
+            return "No relevant context found."
+        
+        formatted_parts = []
+        for ctx in context:
+            source = ctx.get("source", "unknown")
+            text = ctx.get("text", "")
+            formatted_parts.append(f"[{source.replace('_', ' ').title()}] {text}")
+        
+        return "\n\n".join(formatted_parts)
 
+    @safe_execute(ErrorCode.GENERIC_ERROR, default_return=None)
     async def _call_plugins(
         self,
         query: str,
         context: Optional[Dict[str, Any]],
-        responses: Dict[str, Any],
+        search_results: Dict[str, Any],
         final_response_text: str,
     ) -> Any:
-        plugin_results = await call_plugin(
-            "echo",
-            {
+        """Call plugins with enhanced data structure."""
+        try:
+            plugin_data = {
                 "query": query,
                 "context": context,
-                "responses": responses,
+                "search_results": search_results,
                 "final_response": final_response_text,
-            },
-        )
-        return plugin_results
+                "timestamp": __import__('datetime').datetime.now().isoformat(),
+                "services_used": search_results.get("services_attempted", []),
+                "total_results": search_results.get("total_results", 0)
+            }
+            
+            plugin_results = await call_plugin("echo", plugin_data)
+            self._logger.debug(f"Plugin execution completed: {type(plugin_results)}")
+            return plugin_results
+        except Exception as e:
+            self._logger.error(f"Plugin execution failed: {e}", exc_info=True)
+            return None
+    
+    async def get_orchestrator_health(self) -> Dict[str, Any]:
+        """Get health status of the RAG orchestrator and its dependencies."""
+        health_status = {
+            "orchestrator_healthy": True,
+            "timestamp": __import__('datetime').datetime.now().isoformat()
+        }
+        
+        # Check embedding service
+        try:
+            if self.embedding_service:
+                # Try generating a test embedding
+                test_embedding = await self.embedding_service.get_embedding("test")
+                health_status["embedding_service"] = test_embedding is not None
+            else:
+                health_status["embedding_service"] = False
+        except Exception as e:
+            health_status["embedding_service"] = False
+            health_status["embedding_error"] = str(e)
+        
+        # Check LLM client
+        try:
+            if self.llm_client:
+                health_status["llm_client"] = True
+                # Could add a test invocation here if needed
+            else:
+                health_status["llm_client"] = False
+        except Exception as e:
+            health_status["llm_client"] = False
+            health_status["llm_error"] = str(e)
+        
+        # Check unified database service
+        try:
+            db_health = await self.unified_db_service.get_service_status()
+            health_status["database_services"] = db_health
+        except Exception as e:
+            health_status["database_services"] = {"error": str(e)}
+        
+        return health_status

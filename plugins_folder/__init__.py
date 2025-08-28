@@ -5,6 +5,7 @@ Revolutionary AI consciousness and agent systems
 
 # Import key classes for easy access
 from .tools import *
+from .base_agent import BaseAgent
 from .agent_core import SpecialistAgent
 from .orchestrator_core import OrchestratorAgent
 
@@ -30,10 +31,11 @@ try:
         "create_godlike_meta_agent",
         "SpecialistAgent",
         "OrchestratorAgent",
+        "BaseAgent",
     ]
 except ImportError as e:
     # Graceful degradation if advanced systems aren't available
-    __all__ = ["SpecialistAgent", "OrchestratorAgent"]
+    __all__ = ["SpecialistAgent", "OrchestratorAgent", "BaseAgent"]
     import logging
 
     logging.warning(f"Some advanced consciousness systems not available: {e}")

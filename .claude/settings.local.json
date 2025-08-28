@@ -18,7 +18,13 @@
       "Bash(dotnet add package:*)",
       "Read(E:\\e\\Repositories\\Github/**)",
       "Bash(cat:*)",
-      "Read(E:\\e\\Repositories\\Github\\HART-MCP/**)"
+      "Read(E:\\e\\Repositories\\Github\\HART-MCP/**)",
+      "Bash(..venvScriptsactivate)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_rag_pipeline.py -v)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ -v)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_mcp.py::test_mcp_golden_path -v -s)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ -v --tb=short)",
+      "Bash(.venv/Scripts/python.exe:*)"
     ],
     "deny": [],
     "ask": []

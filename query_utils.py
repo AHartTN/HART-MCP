@@ -52,7 +52,8 @@ async def sql_server_connection_context(conn):  # Changed to async def
 SEARCH_NODES_CONTAINS_TEXT = """
     MATCH (n)
     WHERE toLower(n.text) CONTAINS toLower($query)
-    RETURN n.text AS text
+    OPTIONAL MATCH (n)-[r]-(m)
+    RETURN n.text AS text, COLLECT({relationship: type(r), related_text: m.text}) AS related_info
     LIMIT 5
     """
 
