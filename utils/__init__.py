@@ -48,7 +48,8 @@ async def sql_connection_context():
     conn = None
     cursor = None
     try:
-        async with get_sql_server_connection() as conn:
+        connection_manager = await get_sql_server_connection()
+        async with connection_manager as conn:
             cursor = await asyncio.to_thread(conn.cursor)
             yield conn, cursor
             if cursor:

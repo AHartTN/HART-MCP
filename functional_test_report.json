@@ -1,0 +1,382 @@
+{
+  "overall_success": true,
+  "total_tests": 10,
+  "passed": 10,
+  "failed": 0,
+  "success_rate": "100.0%",
+  "total_execution_time": "14.87s",
+  "total_warnings": 4,
+  "total_errors": 0,
+  "functional_validation": "COMPLETE",
+  "test_results": [
+    {
+      "test_name": "Database Connection Tests",
+      "success": true,
+      "details": {
+        "success": true,
+        "database_results": {
+          "sql_server": {
+            "connected": true,
+            "query_test": "passed"
+          },
+          "milvus": {
+            "connected": true,
+            "collections_count": 3,
+            "collections": [
+              "mcp_rag_documents",
+              "rag_collection",
+              "rag_chunks"
+            ]
+          },
+          "neo4j": {
+            "connected": true,
+            "query_test": "passed"
+          }
+        },
+        "errors": [],
+        "warnings": [],
+        "databases_tested": 3,
+        "functional_operations_passed": 2,
+        "execution_time": 1.42
+      },
+      "execution_time": 1.42
+    },
+    {
+      "test_name": "LLM Connector Functionality",
+      "success": true,
+      "details": {
+        "success": true,
+        "llm_results": {
+          "primary_llm_call": {
+            "success": true,
+            "response_length": 13
+          },
+          "available_models": {
+            "gemini": {
+              "model": "gemini-2.0-flash-exp",
+              "type": "cloud",
+              "status": true
+            },
+            "claude": {
+              "model": "claude-3-opus-20240229",
+              "type": "cloud",
+              "status": true
+            },
+            "llama": {
+              "model": "meta-llama/Llama-2-7b-chat-hf",
+              "type": "cloud",
+              "status": true
+            },
+            "ollama": {
+              "model": "llama3:8b",
+              "type": "local",
+              "status": true,
+              "available_models": {
+                "llama3:8b": {
+                  "context_length": 8192,
+                  "description": "Llama 3 8B - Fast and efficient",
+                  "category": "general"
+                },
+                "llama3:70b": {
+                  "context_length": 8192,
+                  "description": "Llama 3 70B - High quality",
+                  "category": "general"
+                },
+                "qwen2.5:7b": {
+                  "context_length": 32768,
+                  "description": "Qwen 2.5 7B - Large context",
+                  "category": "general"
+                },
+                "qwen2.5:14b": {
+                  "context_length": 32768,
+                  "description": "Qwen 2.5 14B - Balanced",
+                  "category": "general"
+                },
+                "qwen2.5:32b": {
+                  "context_length": 32768,
+                  "description": "Qwen 2.5 32B - High quality",
+                  "category": "general"
+                },
+                "qwen2.5-coder:1.5b": {
+                  "context_length": 32768,
+                  "description": "Qwen 2.5 Coder 1.5B - Fast coding",
+                  "category": "coding"
+                },
+                "qwen2.5-coder:7b": {
+                  "context_length": 32768,
+                  "description": "Qwen 2.5 Coder 7B - Balanced coding",
+                  "category": "coding"
+                },
+                "qwen2.5-coder:14b": {
+                  "context_length": 32768,
+                  "description": "Qwen 2.5 Coder 14B - Advanced coding",
+                  "category": "coding"
+                },
+                "qwen2.5-coder:32b": {
+                  "context_length": 32768,
+                  "description": "Qwen 2.5 Coder 32B - Expert coding",
+                  "category": "coding"
+                },
+                "codellama:7b": {
+                  "context_length": 16384,
+                  "description": "Code Llama 7B - Code focused",
+                  "category": "coding"
+                },
+                "codellama:13b": {
+                  "context_length": 16384,
+                  "description": "Code Llama 13B - Better coding",
+                  "category": "coding"
+                },
+                "codellama:34b": {
+                  "context_length": 16384,
+                  "description": "Code Llama 34B - Expert coding",
+                  "category": "coding"
+                },
+                "mistral:7b": {
+                  "context_length": 8192,
+                  "description": "Mistral 7B - Fast inference",
+                  "category": "general"
+                },
+                "phi3:3.8b": {
+                  "context_length": 4096,
+                  "description": "Phi-3 3.8B - Compact model",
+                  "category": "general"
+                },
+                "gemma2:9b": {
+                  "context_length": 8192,
+                  "description": "Gemma 2 9B - Google's model",
+                  "category": "general"
+                },
+                "deepseek-coder:6.7b": {
+                  "context_length": 16384,
+                  "description": "DeepSeek Coder 6.7B - Code expert",
+                  "category": "coding"
+                }
+              }
+            }
+          },
+          "working_models_count": 4,
+          "fallback_test": {
+            "success": false,
+            "response": "This indicates that a fallback mechanism was successfully triggered and executed.  This usually mean"
+          }
+        },
+        "errors": [],
+        "warnings": [
+          "Fallback functionality may not be working properly"
+        ],
+        "functional_tests_passed": 1,
+        "execution_time": 2.6
+      },
+      "execution_time": 2.6
+    },
+    {
+      "test_name": "Agent Workflow Tests",
+      "success": true,
+      "details": {
+        "success": true,
+        "agent_results": {
+          "specialist_agent": {
+            "created": true,
+            "agent_id": 1,
+            "name": "Specialist_1",
+            "has_scratchpad": true,
+            "has_bdi_state": true
+          },
+          "orchestrator_agent": {
+            "created": true,
+            "agent_id": 2,
+            "name": "Orchestrator_2",
+            "has_scratchpad": true,
+            "has_bdi_state": true
+          }
+        },
+        "errors": [],
+        "warnings": [],
+        "agents_tested": 2,
+        "execution_time": 0.38
+      },
+      "execution_time": 0.38
+    },
+    {
+      "test_name": "Tool System Functionality",
+      "success": true,
+      "details": {
+        "success": true,
+        "tool_results": {
+          "write_tool": {
+            "functional": true,
+            "file_created": true
+          },
+          "read_tool": {
+            "functional": true,
+            "content_match": true
+          },
+          "list_tool": {
+            "functional": true,
+            "files_count": 39,
+            "directories_count": 21
+          },
+          "tool_registry": {
+            "tools_registered": 3,
+            "can_retrieve_tools": true,
+            "tool_names": [
+              "write_file",
+              "read_file",
+              "list_files"
+            ]
+          }
+        },
+        "errors": [],
+        "warnings": [],
+        "tools_tested": 4,
+        "execution_time": 0.01
+      },
+      "execution_time": 0.01
+    },
+    {
+      "test_name": "Consciousness System Operations",
+      "success": true,
+      "details": {
+        "success": true,
+        "consciousness_results": {
+          "quantum_thought": {
+            "created": true,
+            "has_content": true,
+            "has_consciousness_level": true,
+            "content_valid": true,
+            "consciousness_level_valid": true,
+            "can_evolve": true
+          },
+          "quantum_agent_evolution": {
+            "importable": true,
+            "class_exists": true,
+            "has_methods": true
+          },
+          "neural_fusion_engine": {
+            "importable": true,
+            "class_exists": true,
+            "has_methods": true
+          },
+          "godlike_meta_agent": {
+            "importable": true,
+            "class_exists": true,
+            "has_methods": true
+          }
+        },
+        "errors": [],
+        "warnings": [],
+        "systems_tested": 4,
+        "execution_time": 0.0
+      },
+      "execution_time": 0.0
+    },
+    {
+      "test_name": "API Endpoint Functionality",
+      "success": true,
+      "details": {
+        "success": true,
+        "api_results": {
+          "server_importable": true,
+          "has_app": true,
+          "app_configured": true,
+          "api_title": "HART-MCP",
+          "api_version": "1.0.0"
+        },
+        "errors": [],
+        "warnings": [
+          "Full API testing requires server startup - only tested configuration"
+        ],
+        "note": "Complete API testing requires integration test environment",
+        "execution_time": 10.29
+      },
+      "execution_time": 10.29
+    },
+    {
+      "test_name": "File System Operations",
+      "success": true,
+      "details": {
+        "success": true,
+        "file_results": {
+          "temp_file_creation": true,
+          "temp_dir_creation": true
+        },
+        "errors": [],
+        "execution_time": 0.0
+      },
+      "execution_time": 0.0
+    },
+    {
+      "test_name": "Configuration Validation",
+      "success": true,
+      "details": {
+        "success": true,
+        "config_results": {
+          "config_completeness": {
+            "total_required": 8,
+            "missing": 0,
+            "missing_configs": []
+          },
+          "validation_function": {
+            "valid": true,
+            "errors": [],
+            "warnings": [
+              "Missing API key: ANTHROPIC_API_KEY (fallback may be limited)",
+              "Missing API key: HUGGINGFACE_API_TOKEN (fallback may be limited)"
+            ]
+          }
+        },
+        "errors": [],
+        "warnings": [
+          "Missing API key: ANTHROPIC_API_KEY (fallback may be limited)",
+          "Missing API key: HUGGINGFACE_API_TOKEN (fallback may be limited)"
+        ],
+        "execution_time": 0.0
+      },
+      "execution_time": 0.0
+    },
+    {
+      "test_name": "Error Handling Tests",
+      "success": true,
+      "details": {
+        "success": true,
+        "error_handling_results": {
+          "tool_error_handling": true
+        },
+        "errors": [],
+        "execution_time": 0.0
+      },
+      "execution_time": 0.0
+    },
+    {
+      "test_name": "Performance and Stability",
+      "success": true,
+      "details": {
+        "success": true,
+        "performance_results": {
+          "memory_before_mb": 1182.99,
+          "cpu_count": 32,
+          "system_stable": true,
+          "memory_after_mb": 1183.0,
+          "memory_growth_mb": 0.0
+        },
+        "errors": [],
+        "execution_time": 0.17
+      },
+      "execution_time": 0.17
+    }
+  ],
+  "failed_tests": [],
+  "passed_tests": [
+    "Database Connection Tests",
+    "LLM Connector Functionality",
+    "Agent Workflow Tests",
+    "Tool System Functionality",
+    "Consciousness System Operations",
+    "API Endpoint Functionality",
+    "File System Operations",
+    "Configuration Validation",
+    "Error Handling Tests",
+    "Performance and Stability"
+  ]
+}

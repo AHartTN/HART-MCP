@@ -47,7 +47,10 @@ class GeminiClient(BaseLLMClient):
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable not set.")
+            self.api_key_missing = True
+            logging.warning("GEMINI_API_KEY environment variable not set - client will fail gracefully")
+            return
+        self.api_key_missing = False
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel(GEMINI_MODEL_NAME)
         logging.info(f"Gemini model '{GEMINI_MODEL_NAME}' initialized.")
@@ -55,6 +58,8 @@ class GeminiClient(BaseLLMClient):
     async def invoke(
         self, prompt: str, temperature: float = None, max_tokens: int = None
     ) -> str:
+        if self.api_key_missing:
+            raise ValueError("GEMINI_API_KEY environment variable not set.")
         temp = temperature if temperature is not None else GEMINI_TEMPERATURE
         max_t = max_tokens if max_tokens is not None else GEMINI_MAX_TOKENS
         logging.info(
@@ -73,13 +78,18 @@ class ClaudeClient(BaseLLMClient):
     def __init__(self):
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable not set.")
+            self.api_key_missing = True
+            logging.warning("ANTHROPIC_API_KEY environment variable not set - client will fail gracefully")
+            return
+        self.api_key_missing = False
         self.client = anthropic.Anthropic(api_key=api_key)
         logging.info(f"Claude client initialized for model '{CLAUDE_MODEL_NAME}'.")
 
     async def invoke(
         self, prompt: str, temperature: float = None, max_tokens: int = None
     ) -> str:
+        if self.api_key_missing:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set.")
         temp = temperature if temperature is not None else CLAUDE_TEMPERATURE
         max_t = max_tokens if max_tokens is not None else CLAUDE_MAX_TOKENS
         logging.info(
@@ -97,9 +107,10 @@ class ClaudeClient(BaseLLMClient):
 class HuggingFaceClient(BaseLLMClient):
     def __init__(self):
         if not HUGGINGFACE_API_TOKEN:
-            raise ValueError(
-                "HUGGINGFACE_API_TOKEN environment variable not set for Llama."
-            )
+            self.api_key_missing = True
+            logging.warning("HUGGINGFACE_API_TOKEN environment variable not set - client will fail gracefully")
+            return
+        self.api_key_missing = False
         self.client = InferenceClient(
             model=LLAMA_MODEL_NAME, token=HUGGINGFACE_API_TOKEN
         )
@@ -110,6 +121,8 @@ class HuggingFaceClient(BaseLLMClient):
     async def invoke(
         self, prompt: str, temperature: float = None, max_tokens: int = None
     ) -> str:
+        if self.api_key_missing:
+            raise ValueError("HUGGINGFACE_API_TOKEN environment variable not set.")
         temp = temperature if temperature is not None else LLAMA_TEMPERATURE
         max_t = max_tokens if max_tokens is not None else LLAMA_MAX_TOKENS
         logging.info(
@@ -187,8 +200,13 @@ class LLMClient:
             for source in LLM_FALLBACK_ORDER:
                 if source != self.llm_source:
                     try:
-                        self.fallback_clients[source] = self._create_client(source)
-                        logging.info(f"Fallback client '{source}' initialized.")
+                        client = self._create_client(source)
+                        # Only add client if it was initialized properly (has no API key issues)
+                        if not hasattr(client, 'api_key_missing') or not client.api_key_missing:
+                            self.fallback_clients[source] = client
+                            logging.info(f"Fallback client '{source}' initialized.")
+                        else:
+                            logging.info(f"Fallback client '{source}' skipped due to missing API key.")
                     except Exception as e:
                         logging.warning(f"Failed to initialize fallback client '{source}': {e}")
 

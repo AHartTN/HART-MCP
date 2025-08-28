@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from typing import Dict, Any
@@ -40,6 +41,9 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json"
 )
+
+# Ensure logs directory exists
+os.makedirs("logs", exist_ok=True)
 
 # Configure structured logging
 logging.basicConfig(

@@ -4,7 +4,12 @@
       "Bash(python -m pytest --tb=short -v)",
       "Bash(ruff check:*)",
       "Bash(python -m black:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(for:*)",
+      "Bash(do python -m py_compile \"$file\")",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(pytest:*)"
     ],
     "deny": [],
     "ask": []

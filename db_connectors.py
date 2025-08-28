@@ -50,7 +50,7 @@ def circuit_breaker(service_name: str):
     """Circuit breaker decorator for database operations."""
     def decorator(func):
         @wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def async_wrapper(*args, **kwargs):
             state = _circuit_breaker_state[service_name]
             
             # Check if circuit is open
@@ -62,7 +62,13 @@ def circuit_breaker(service_name: str):
                     raise ConnectionError(f"Circuit breaker OPEN for {service_name}")
             
             try:
-                result = await func(*args, **kwargs)
+                # Check if function is async
+                if asyncio.iscoroutinefunction(func):
+                    result = await func(*args, **kwargs)
+                else:
+                    # For sync functions, run them directly
+                    result = func(*args, **kwargs)
+                
                 # Reset on success
                 if state['state'] in ['HALF_OPEN', 'CLOSED']:
                     state['failures'] = 0
@@ -78,8 +84,15 @@ def circuit_breaker(service_name: str):
                     logger.error(f"Circuit breaker OPEN for {service_name} after {state['failures']} failures")
                 
                 raise e
-                
-        return wrapper
+        
+        @wraps(func)        
+        def sync_wrapper(*args, **kwargs):
+            # For sync usage, we can't use circuit breaker async features
+            # Just call the function directly
+            return func(*args, **kwargs)
+            
+        # Return async wrapper for now, as most usage seems to expect async
+        return async_wrapper
     return decorator
 
 

@@ -49,7 +49,8 @@ async def run_agent_mission(
     try:
         # Database logging (robust async context manager)
         # Use async context manager to get the actual connection object
-        async with get_sql_server_connection() as conn:
+        connection_manager = await get_sql_server_connection()
+        async with connection_manager as conn:
             from query_utils import (
                 AGENTLOG_INSERT,
                 execute_sql_query,

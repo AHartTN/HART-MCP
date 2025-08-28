@@ -129,18 +129,8 @@ async def search_sql_server_async(
     query_embedding: List[float], sql_server_conn=None
 ) -> List[Dict[str, Any]]:
     """Asynchronously search SQL Server."""
-    if sql_server_conn is None:
-        try:
-            sql_server_conn = get_sql_server_connection()
-        except (RuntimeError, ValueError, TypeError) as exc:
-            logger.error(
-                (
-                    "Failed to get SQL Server connection: %s\n%s",
-                    exc,
-                    traceback.format_exc(),
-                )
-            )
-            return []
+    # Note: sql_server_conn parameter is ignored since sql_connection_context() 
+    # handles connection management internally
     try:
         async with sql_connection_context() as (
             conn,
