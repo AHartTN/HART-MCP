@@ -462,10 +462,11 @@ class ReadFromSharedStateTool(Tool):
         key = kwargs.get("key") or (args[0] if args else None)
         
         try:
-            if self.project_state and hasattr(self.project_state, 'get_state'):
-                value = self.project_state.get_state(key)
-                if value is not None:
-                    return self._create_success_response({"key": key, "value": value})
+            if self.project_state:
+                # Check if key exists in the state
+                if key in self.project_state._state:
+                    value = self.project_state._state[key]
+                    return self._create_success_response({"key": key, "value": value, "storage_type": "project_state"})
                 else:
                     return self._create_error_response(f"Key '{key}' not found in shared state", ErrorCode.VALIDATION_ERROR.value)
             else:
@@ -655,12 +656,10 @@ class WriteToSharedStateTool(Tool):
         value = kwargs.get("value") or (args[1] if len(args) > 1 else None)
         
         try:
-            if self.project_state and hasattr(self.project_state, 'set_state'):
-                success = self.project_state.set_state(key, value)
-                if success:
-                    return self._create_success_response({"key": key, "value": value, "stored": True})
-                else:
-                    return self._create_error_response("Failed to store value in project state", ErrorCode.TOOL_EXECUTION.value)
+            if self.project_state:
+                # ProjectState uses _state dict directly (sync access)
+                self.project_state._state[key] = value
+                return self._create_success_response({"key": key, "value": value, "stored": True, "storage_type": "project_state"})
             else:
                 # Fallback to in-memory storage if project_state not available
                 if not hasattr(self, '_memory_state'):
