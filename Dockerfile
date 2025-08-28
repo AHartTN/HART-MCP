@@ -4,12 +4,12 @@ FROM python:3.11-slim-bookworm as builder
 # Install build dependencies and SQL Server ODBC driver
 RUN apt-get update && \
     apt-get install -y \
-        curl \
-        apt-transport-https \
-        gnupg \
-        gcc \
-        g++ \
-        unixodbc-dev && \
+    curl \
+    apt-transport-https \
+    gnupg \
+    gcc \
+    g++ \
+    unixodbc-dev && \
     curl -sSL https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
     echo "deb [arch=amd64] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list && \
     apt-get update && \
@@ -28,10 +28,10 @@ FROM python:3.11-slim-bookworm
 # Install runtime dependencies
 RUN apt-get update && \
     apt-get install -y \
-        curl \
-        apt-transport-https \
-        gnupg \
-        unixodbc && \
+    curl \
+    apt-transport-https \
+    gnupg \
+    unixodbc && \
     curl -sSL https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
     echo "deb [arch=amd64] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list && \
     apt-get update && \
@@ -68,8 +68,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Production-ready startup command with proper workers and logging
 CMD ["python", "-m", "uvicorn", "server:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "4", \
-     "--access-log", \
-     "--log-level", "info"]
+    "--host", "0.0.0.0", \
+    "--port", "8000", \
+    "--workers", "4", \
+    "--access-log", \
+    "--log-level", "info"]

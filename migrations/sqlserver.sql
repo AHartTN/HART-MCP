@@ -18,9 +18,7 @@ CREATE TABLE Documents
     SourceURL NVARCHAR(MAX),
     -- For Windows, use the FILESTREAM attribute for large files. For Linux,
     -- VARBINARY(MAX) is the correct approach as it stores data directly in the table.
-    DocumentContent VARBINARY(MAX) FILESTREAM NULL,
-    -- DocumentContent VARBINARY(MAX) NOT NULL,
-    DocumentContent VARBINARY(MAX) FILESTREAM NULL,
+    DocumentContent VARBINARY(MAX) NULL,
     CreatedAt DATETIME DEFAULT GETDATE()
 );
 GO
@@ -30,8 +28,9 @@ CREATE TABLE Chunks
     ChunkID UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
     DocumentID UNIQUEIDENTIFIER FOREIGN KEY REFERENCES Documents(DocumentID),
     Text NVARCHAR(MAX),
-    -- The native VECTOR data type is used here, as it's a first-class citizen in SQL Server 2025.
-    Embedding VECTOR(1536),
+    -- Store embeddings as binary data (compatible with all SQL Server versions)
+    -- Vector operations will be handled in application code
+    Embedding VARBINARY(MAX),
     ModelName NVARCHAR(100),
     ModelVersion NVARCHAR(50),
     CreatedAt DATETIME DEFAULT GETDATE()

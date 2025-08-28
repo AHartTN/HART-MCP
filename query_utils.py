@@ -15,7 +15,8 @@ WHERE Text IS NOT NULL
 ORDER BY ChunkID
 """
 AGENTLOG_INSERT = (
-    "INSERT INTO AgentLogs (AgentID, QueryContent, ThoughtTree) VALUES (?, ?, ?);"
+    "INSERT INTO AgentLogs (AgentID, QueryContent, ResponseContent, ThoughtTree, BDIState, Evaluation, RetrievedChunks) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?);"
 )
 AGENTLOG_UPDATE_THOUGHTTREE = "UPDATE AgentLogs SET ThoughtTree = ? WHERE LogID = ?"
 DOCUMENT_INSERT = (

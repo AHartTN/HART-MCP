@@ -9,9 +9,23 @@
       "Bash(do python -m py_compile \"$file\")",
       "Bash(echo:*)",
       "Bash(done)",
-      "Bash(pytest:*)"
+      "Bash(pytest:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dir:*)",
+      "Bash(docker:*)",
+      "Bash(docker-compose:*)",
+      "Bash(nuget search:*)",
+      "Bash(dotnet add package:*)",
+      "Read(E:\\e\\Repositories\\Github/**)",
+      "Bash(cat:*)",
+      "Read(E:\\e\\Repositories\\Github\\HART-MCP/**)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "memory",
+    "sequentialThinking"
+  ]
 }

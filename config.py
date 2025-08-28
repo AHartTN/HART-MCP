@@ -15,78 +15,80 @@ logger = logging.getLogger(__name__)
 # Load environment variables from .env file
 load_dotenv()
 
+
 @dataclass
 class DatabaseConfig:
     """Database configuration with validation."""
+
     host: str
     port: int
     user: str
     password: str
     database: str
-    
+
     def __post_init__(self):
         if not all([self.host, self.user, self.password]):
             raise ValueError("Database configuration incomplete")
-            
-@dataclass 
+
+
+@dataclass
 class LLMConfig:
     """LLM configuration with validation."""
+
     model_name: str
     temperature: float
     max_tokens: int
     api_key: Optional[str] = None
-    
+
     def __post_init__(self):
         if not (0.0 <= self.temperature <= 2.0):
             raise ValueError("Temperature must be between 0.0 and 2.0")
         if not (1 <= self.max_tokens <= 32768):
             raise ValueError("Max tokens must be between 1 and 32768")
-            
+
+
 def validate_config() -> Dict[str, Any]:
     """Validate all configuration settings on startup."""
     errors = []
     warnings = []
-    
+
     # Required environment variables
     required_vars = {
-        'SQL_SERVER_DRIVER': SQL_SERVER_DRIVER,
-        'SQL_SERVER_SERVER': SQL_SERVER_SERVER,
-        'SQL_SERVER_DATABASE': SQL_SERVER_DATABASE,
-        'NEO4J_URI': NEO4J_URI,
-        'MILVUS_HOST': MILVUS_HOST,
+        "SQL_SERVER_DRIVER": SQL_SERVER_DRIVER,
+        "SQL_SERVER_SERVER": SQL_SERVER_SERVER,
+        "SQL_SERVER_DATABASE": SQL_SERVER_DATABASE,
+        "NEO4J_URI": NEO4J_URI,
+        "MILVUS_HOST": MILVUS_HOST,
     }
-    
+
     for var_name, var_value in required_vars.items():
         if not var_value:
             errors.append(f"Missing required environment variable: {var_name}")
-    
+
     # Validate LLM configurations
     try:
         gemini_config = LLMConfig(
             model_name=GEMINI_MODEL_NAME,
             temperature=GEMINI_TEMPERATURE,
             max_tokens=GEMINI_MAX_TOKENS,
-            api_key=os.getenv('GEMINI_API_KEY')
+            api_key=os.getenv("GEMINI_API_KEY"),
         )
     except ValueError as e:
         errors.append(f"Gemini configuration error: {e}")
-        
+
     # Check API keys
     api_keys = {
-        'GEMINI_API_KEY': os.getenv('GEMINI_API_KEY'),
-        'ANTHROPIC_API_KEY': os.getenv('ANTHROPIC_API_KEY'),
-        'HUGGINGFACE_API_TOKEN': HUGGINGFACE_API_TOKEN,
+        "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
+        "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
+        "HUGGINGFACE_API_TOKEN": HUGGINGFACE_API_TOKEN,
     }
-    
+
     for key_name, key_value in api_keys.items():
         if not key_value:
             warnings.append(f"Missing API key: {key_name} (fallback may be limited)")
-    
-    return {
-        'valid': len(errors) == 0,
-        'errors': errors,
-        'warnings': warnings
-    }
+
+    return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
+
 
 # --- SQL Server Configuration ---
 
@@ -157,35 +159,97 @@ OLLAMA_MAX_TOKENS = int(os.getenv("OLLAMA_MAX_TOKENS", "2048"))
 
 # LLM Fallback Configuration
 LLM_FALLBACK_ENABLED = os.getenv("LLM_FALLBACK_ENABLED", "true").lower() == "true"
-LLM_FALLBACK_ORDER = os.getenv("LLM_FALLBACK_ORDER", "gemini,ollama,claude,llama").split(",")
+LLM_FALLBACK_ORDER = os.getenv(
+    "LLM_FALLBACK_ORDER", "gemini,ollama,claude,llama"
+).split(",")
 
 # Additional Local Models Configuration
 OLLAMA_MODELS = {
     # Llama 3 Series
-    "llama3:8b": {"context_length": 8192, "description": "Llama 3 8B - Fast and efficient", "category": "general"},
-    "llama3:70b": {"context_length": 8192, "description": "Llama 3 70B - High quality", "category": "general"},
-    
+    "llama3:8b": {
+        "context_length": 8192,
+        "description": "Llama 3 8B - Fast and efficient",
+        "category": "general",
+    },
+    "llama3:70b": {
+        "context_length": 8192,
+        "description": "Llama 3 70B - High quality",
+        "category": "general",
+    },
     # Qwen 2.5 Series (General)
-    "qwen2.5:7b": {"context_length": 32768, "description": "Qwen 2.5 7B - Large context", "category": "general"},
-    "qwen2.5:14b": {"context_length": 32768, "description": "Qwen 2.5 14B - Balanced", "category": "general"},
-    "qwen2.5:32b": {"context_length": 32768, "description": "Qwen 2.5 32B - High quality", "category": "general"},
-    
+    "qwen2.5:7b": {
+        "context_length": 32768,
+        "description": "Qwen 2.5 7B - Large context",
+        "category": "general",
+    },
+    "qwen2.5:14b": {
+        "context_length": 32768,
+        "description": "Qwen 2.5 14B - Balanced",
+        "category": "general",
+    },
+    "qwen2.5:32b": {
+        "context_length": 32768,
+        "description": "Qwen 2.5 32B - High quality",
+        "category": "general",
+    },
     # Qwen Coder Series (Code-specialized)
-    "qwen2.5-coder:1.5b": {"context_length": 32768, "description": "Qwen 2.5 Coder 1.5B - Fast coding", "category": "coding"},
-    "qwen2.5-coder:7b": {"context_length": 32768, "description": "Qwen 2.5 Coder 7B - Balanced coding", "category": "coding"},
-    "qwen2.5-coder:14b": {"context_length": 32768, "description": "Qwen 2.5 Coder 14B - Advanced coding", "category": "coding"},
-    "qwen2.5-coder:32b": {"context_length": 32768, "description": "Qwen 2.5 Coder 32B - Expert coding", "category": "coding"},
-    
+    "qwen2.5-coder:1.5b": {
+        "context_length": 32768,
+        "description": "Qwen 2.5 Coder 1.5B - Fast coding",
+        "category": "coding",
+    },
+    "qwen2.5-coder:7b": {
+        "context_length": 32768,
+        "description": "Qwen 2.5 Coder 7B - Balanced coding",
+        "category": "coding",
+    },
+    "qwen2.5-coder:14b": {
+        "context_length": 32768,
+        "description": "Qwen 2.5 Coder 14B - Advanced coding",
+        "category": "coding",
+    },
+    "qwen2.5-coder:32b": {
+        "context_length": 32768,
+        "description": "Qwen 2.5 Coder 32B - Expert coding",
+        "category": "coding",
+    },
     # Code-focused models
-    "codellama:7b": {"context_length": 16384, "description": "Code Llama 7B - Code focused", "category": "coding"},
-    "codellama:13b": {"context_length": 16384, "description": "Code Llama 13B - Better coding", "category": "coding"},
-    "codellama:34b": {"context_length": 16384, "description": "Code Llama 34B - Expert coding", "category": "coding"},
-    
+    "codellama:7b": {
+        "context_length": 16384,
+        "description": "Code Llama 7B - Code focused",
+        "category": "coding",
+    },
+    "codellama:13b": {
+        "context_length": 16384,
+        "description": "Code Llama 13B - Better coding",
+        "category": "coding",
+    },
+    "codellama:34b": {
+        "context_length": 16384,
+        "description": "Code Llama 34B - Expert coding",
+        "category": "coding",
+    },
     # Other popular models
-    "mistral:7b": {"context_length": 8192, "description": "Mistral 7B - Fast inference", "category": "general"},
-    "phi3:3.8b": {"context_length": 4096, "description": "Phi-3 3.8B - Compact model", "category": "general"},
-    "gemma2:9b": {"context_length": 8192, "description": "Gemma 2 9B - Google's model", "category": "general"},
-    "deepseek-coder:6.7b": {"context_length": 16384, "description": "DeepSeek Coder 6.7B - Code expert", "category": "coding"},
+    "mistral:7b": {
+        "context_length": 8192,
+        "description": "Mistral 7B - Fast inference",
+        "category": "general",
+    },
+    "phi3:3.8b": {
+        "context_length": 4096,
+        "description": "Phi-3 3.8B - Compact model",
+        "category": "general",
+    },
+    "gemma2:9b": {
+        "context_length": 8192,
+        "description": "Gemma 2 9B - Google's model",
+        "category": "general",
+    },
+    "deepseek-coder:6.7b": {
+        "context_length": 16384,
+        "description": "DeepSeek Coder 6.7B - Code expert",
+        "category": "coding",
+    },
 }
 
 # Performance and production settings
@@ -209,12 +273,12 @@ REDIS_POOL_SIZE = int(os.getenv("REDIS_POOL_SIZE", "10"))
 # Validate configuration on import
 try:
     config_validation = validate_config()
-    if not config_validation['valid']:
+    if not config_validation["valid"]:
         logger.error(f"Configuration validation failed: {config_validation['errors']}")
         raise ValueError("Invalid configuration. Check environment variables.")
 
-    if config_validation['warnings']:
-        for warning in config_validation['warnings']:
+    if config_validation["warnings"]:
+        for warning in config_validation["warnings"]:
             logger.warning(warning)
 except NameError:
     # Handle case where validation function uses variables not yet defined

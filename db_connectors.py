@@ -37,9 +37,9 @@ _milvus_client_pool = None
 
 # Circuit breaker state
 _circuit_breaker_state = {
-    'sql_server': {'failures': 0, 'last_failure': 0, 'state': 'CLOSED'},
-    'neo4j': {'failures': 0, 'last_failure': 0, 'state': 'CLOSED'},
-    'milvus': {'failures': 0, 'last_failure': 0, 'state': 'CLOSED'}
+    "sql_server": {"failures": 0, "last_failure": 0, "state": "CLOSED"},
+    "neo4j": {"failures": 0, "last_failure": 0, "state": "CLOSED"},
+    "milvus": {"failures": 0, "last_failure": 0, "state": "CLOSED"},
 }
 
 CIRCUIT_BREAKER_THRESHOLD = 5
@@ -48,19 +48,22 @@ CIRCUIT_BREAKER_TIMEOUT = 60  # seconds
 
 def circuit_breaker(service_name: str):
     """Circuit breaker decorator for database operations."""
+
     def decorator(func):
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
             state = _circuit_breaker_state[service_name]
-            
+
             # Check if circuit is open
-            if state['state'] == 'OPEN':
-                if time.time() - state['last_failure'] > CIRCUIT_BREAKER_TIMEOUT:
-                    state['state'] = 'HALF_OPEN'
-                    logger.info(f"Circuit breaker for {service_name} moved to HALF_OPEN")
+            if state["state"] == "OPEN":
+                if time.time() - state["last_failure"] > CIRCUIT_BREAKER_TIMEOUT:
+                    state["state"] = "HALF_OPEN"
+                    logger.info(
+                        f"Circuit breaker for {service_name} moved to HALF_OPEN"
+                    )
                 else:
                     raise ConnectionError(f"Circuit breaker OPEN for {service_name}")
-            
+
             try:
                 # Check if function is async
                 if asyncio.iscoroutinefunction(func):
@@ -68,31 +71,34 @@ def circuit_breaker(service_name: str):
                 else:
                     # For sync functions, run them directly
                     result = func(*args, **kwargs)
-                
+
                 # Reset on success
-                if state['state'] in ['HALF_OPEN', 'CLOSED']:
-                    state['failures'] = 0
-                    state['state'] = 'CLOSED'
+                if state["state"] in ["HALF_OPEN", "CLOSED"]:
+                    state["failures"] = 0
+                    state["state"] = "CLOSED"
                 return result
-                
+
             except Exception as e:
-                state['failures'] += 1
-                state['last_failure'] = time.time()
-                
-                if state['failures'] >= CIRCUIT_BREAKER_THRESHOLD:
-                    state['state'] = 'OPEN'
-                    logger.error(f"Circuit breaker OPEN for {service_name} after {state['failures']} failures")
-                
+                state["failures"] += 1
+                state["last_failure"] = time.time()
+
+                if state["failures"] >= CIRCUIT_BREAKER_THRESHOLD:
+                    state["state"] = "OPEN"
+                    logger.error(
+                        f"Circuit breaker OPEN for {service_name} after {state['failures']} failures"
+                    )
+
                 raise e
-        
-        @wraps(func)        
+
+        @wraps(func)
         def sync_wrapper(*args, **kwargs):
             # For sync usage, we can't use circuit breaker async features
             # Just call the function directly
             return func(*args, **kwargs)
-            
+
         # Return async wrapper for now, as most usage seems to expect async
         return async_wrapper
+
     return decorator
 
 
@@ -109,13 +115,17 @@ class SQLServerConnectionManager:
         if not self._pool_initialized:
             for _ in range(self.pool_size):
                 try:
-                    conn = await asyncio.to_thread(pyodbc.connect, self.connection_string)
+                    conn = await asyncio.to_thread(
+                        pyodbc.connect, self.connection_string
+                    )
                     await self._pool.put(conn)
                 except Exception as e:
                     logger.error(f"Failed to create SQL Server connection: {e}")
                     break
             self._pool_initialized = True
-            logger.info(f"SQL Server connection pool initialized with {self._pool.qsize()} connections")
+            logger.info(
+                f"SQL Server connection pool initialized with {self._pool.qsize()} connections"
+            )
 
     async def __aenter__(self):
         await self._initialize_pool()
@@ -137,7 +147,7 @@ class SQLServerConnectionManager:
                     await asyncio.to_thread(self.conn.rollback)
                 else:
                     await asyncio.to_thread(self.conn.commit)
-                
+
                 # Return to pool if healthy
                 if not exc_type and self._pool.qsize() < self.pool_size:
                     await self._pool.put(self.conn)
@@ -148,15 +158,19 @@ class SQLServerConnectionManager:
                 await asyncio.to_thread(self.conn.close)
 
 
-@circuit_breaker('sql_server')
-def get_sql_server_connection():
+@circuit_breaker("sql_server")
+async def get_sql_server_connection():
     """
     Return an async context manager for SQL Server connection.
     Usage:
-        async with get_sql_server_connection() as conn:
+        connection_manager = await get_sql_server_connection()
+        async with connection_manager as conn:
             ...
     """
-    return SQLServerConnectionManager(SQL_SERVER_CONNECTION_STRING)
+    # Initialize and return the connection manager
+    manager = SQLServerConnectionManager(SQL_SERVER_CONNECTION_STRING)
+    await manager._initialize_pool()
+    return manager
 
 
 async def get_milvus_client() -> Optional[MilvusClient]:

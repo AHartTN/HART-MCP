@@ -18,9 +18,8 @@ from routes.mcp import mcp_router
 from routes.retrieve import retrieve_router
 from routes.status import status_router
 from security import get_api_key
-from config import (
-    MILVUS_HOST, MILVUS_PORT, NEO4J_URI, SQL_SERVER_SERVER
-)
+from config import MILVUS_HOST, MILVUS_PORT, NEO4J_URI, SQL_SERVER_SERVER
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,6 +30,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logging.info("🛑 HART-MCP shutting down...")
 
+
 app = FastAPI(
     title="HART-MCP",
     description="Multi-Agent Control Plane with RAG and Tree of Thought",
@@ -39,7 +39,7 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json"
+    openapi_url="/api/openapi.json",
 )
 
 # Ensure logs directory exists
@@ -51,14 +51,14 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("logs/hart-mcp.log", mode="a")
-    ]
+        logging.FileHandler("logs/hart-mcp.log", mode="a"),
+    ],
 )
 
 # Add security middleware
 app.add_middleware(
-    TrustedHostMiddleware, 
-    allowed_hosts=["localhost", "127.0.0.1", "*.localhost"]
+    TrustedHostMiddleware,
+    allowed_hosts=["localhost", "127.0.0.1", "*.localhost", "testserver"],
 )
 
 app.add_middleware(
@@ -69,6 +69,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Request timing middleware
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
@@ -77,6 +78,7 @@ async def add_process_time_header(request: Request, call_next):
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
     return response
+
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -99,8 +101,9 @@ async def read_root():
     except FileNotFoundError:
         return JSONResponse(
             status_code=404,
-            content={"message": "Frontend not built. Run 'npm run build' first."}
+            content={"message": "Frontend not built. Run 'npm run build' first."},
         )
+
 
 @app.get("/api/info")
 async def get_api_info():
@@ -112,17 +115,19 @@ async def get_api_info():
         "components": {
             "sql_server": f"{SQL_SERVER_SERVER}",
             "milvus": f"{MILVUS_HOST}:{MILVUS_PORT}",
-            "neo4j": f"{NEO4J_URI}"
-        }
+            "neo4j": f"{NEO4J_URI}",
+        },
     }
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Custom HTTP exception handler."""
     return JSONResponse(
         status_code=exc.status_code,
-        content={"message": exc.detail, "path": request.url.path}
+        content={"message": exc.detail, "path": request.url.path},
     )
+
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
@@ -130,7 +135,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     logging.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"message": "Internal server error", "path": request.url.path}
+        content={"message": "Internal server error", "path": request.url.path},
     )
 
 

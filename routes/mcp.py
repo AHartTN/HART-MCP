@@ -66,7 +66,11 @@ async def run_agent_mission(
                     (
                         agent_id,
                         json.dumps({"query": query}),
+                        None,  # ResponseContent - will be updated later
                         json.dumps({}),  # ThoughtTree - initial empty
+                        json.dumps({}),  # BDIState - initial empty
+                        json.dumps({}),  # Evaluation - initial empty
+                        json.dumps([]),  # RetrievedChunks - initial empty array
                     ),
                 )
                 await asyncio.to_thread(conn.commit)

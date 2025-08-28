@@ -33,19 +33,30 @@ class SQLQueryTool(Tool):
             description="Executes read-only SQL queries against the SQL Server SSoT.",
         )
 
-    def execute(self, *args, **kwargs):
+    async def execute(self, *args, **kwargs):
         sql_query = kwargs.get("sql_query") or (args[0] if args else None)
         if not sql_query or not sql_query.strip().lower().startswith("select"):
             raise ValueError("Only SELECT queries are allowed.")
-        from db_connectors import get_sql_server_connection
-        from query_utils import execute_sql_query
 
-        conn = get_sql_server_connection()
-        cursor = conn.cursor()
-        cursor = execute_sql_query(cursor, sql_query)
-        columns = [desc[0] for desc in cursor.description]
-        rows = cursor.fetchall()
-        return [dict(zip(columns, row, strict=False)) for row in rows]
+        from db_connectors import get_sql_server_connection
+        from query_utils import execute_sql_query, sql_server_connection_context
+        import asyncio
+
+        try:
+            connection_manager = await get_sql_server_connection()
+            async with connection_manager as conn:
+                async with sql_server_connection_context(conn) as (conn, cursor):
+                    await asyncio.to_thread(execute_sql_query, cursor, sql_query)
+                    # Fetch all results
+                    rows = await asyncio.to_thread(cursor.fetchall)
+                    columns = (
+                        [desc[0] for desc in cursor.description]
+                        if cursor.description
+                        else []
+                    )
+                    return [dict(zip(columns, row, strict=False)) for row in rows]
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
 
 class WriteFileTool(Tool):

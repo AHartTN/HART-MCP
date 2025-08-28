@@ -1,6 +1,7 @@
 using System;
 using System.Data.SqlTypes;
 using System.IO;
+using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 using Microsoft.SqlServer.Server;
 using System.Data.SqlClient;
@@ -15,24 +16,26 @@ using System.Numerics;
 public class QuantumModelAccess
 {
     private static Dictionary<string, MemoryMappedModel> _loadedModels = new Dictionary<string, MemoryMappedModel>();
-    
+
     /// <summary>
     /// Load a massive model using FILESTREAM and memory mapping
     /// </summary>
     [SqlFunction(DataAccess = DataAccessKind.Read, FillRowMethodName = "FillModelInfo")]
-    public static IEnumerable LoadQuantumModel(SqlString modelPath, SqlString modelName, SqlInt64 parameterCount)
+    public static IEnumerable<ModelInfo> LoadQuantumModel(SqlString modelPath, SqlString modelName, SqlInt64 parameterCount)
     {
         string path = modelPath.Value;
         string name = modelName.Value;
         long parameters = parameterCount.Value;
-        
+
+        ModelInfo result;
+
         try
         {
             // Create memory-mapped access to the model file
             var model = new MemoryMappedModel(path, parameters);
             _loadedModels[name] = model;
-            
-            yield return new ModelInfo
+
+            result = new ModelInfo
             {
                 Name = name,
                 ParameterCount = parameters,
@@ -43,13 +46,15 @@ public class QuantumModelAccess
         }
         catch (Exception ex)
         {
-            yield return new ModelInfo
+            result = new ModelInfo
             {
                 Name = name,
                 Status = "ERROR",
                 ErrorMessage = ex.Message
             };
         }
+
+        yield return result;
     }
 
     /// <summary>
@@ -62,22 +67,22 @@ public class QuantumModelAccess
         {
             return new SqlString("ERROR: Model not loaded");
         }
-        
+
         var model = _loadedModels[modelName.Value];
-        
+
         // Implement quantum-inspired inference with superposition
         var quantumStates = GenerateQuantumSuperposition(prompt.Value, temperature.Value);
         var results = new List<string>();
-        
+
         foreach (var state in quantumStates)
         {
             var result = model.InferenceAtState(state, maxTokens.Value);
             results.Add(result);
         }
-        
+
         // Collapse quantum states to get optimal result
         var collapsedResult = CollapseQuantumStates(results, prompt.Value);
-        
+
         return new SqlString(collapsedResult);
     }
 
@@ -92,9 +97,9 @@ public class QuantumModelAccess
             SqlContext.Pipe.Send("ERROR: Model not loaded");
             return;
         }
-        
+
         var model = _loadedModels[modelName.Value];
-        
+
         switch (operation.Value.ToUpper())
         {
             case "REPLACE":
@@ -110,7 +115,7 @@ public class QuantumModelAccess
                 model.QuantumEntangleWeights(layerName.Value, newWeights.Value);
                 break;
         }
-        
+
         SqlContext.Pipe.Send($"Model surgery completed: {operation.Value} on {layerName.Value}");
     }
 
@@ -118,16 +123,16 @@ public class QuantumModelAccess
     /// Stream through model parameters for analysis
     /// </summary>
     [SqlFunction(DataAccess = DataAccessKind.Read, FillRowMethodName = "FillParameterInfo")]
-    public static IEnumerable StreamModelParameters(SqlString modelName, SqlInt64 startIndex, SqlInt64 count)
+    public static IEnumerable<ParameterInfo> StreamModelParameters(SqlString modelName, SqlInt64 startIndex, SqlInt64 count)
     {
         if (!_loadedModels.ContainsKey(modelName.Value))
         {
             yield break;
         }
-        
+
         var model = _loadedModels[modelName.Value];
         var parameters = model.StreamParameters(startIndex.Value, count.Value);
-        
+
         foreach (var param in parameters)
         {
             yield return new ParameterInfo
@@ -149,13 +154,13 @@ public class QuantumModelAccess
     {
         // Create multiple quantum states representing different interpretation paths
         var states = new List<QuantumState>();
-        
+
         // Semantic dimension superposition
         states.Add(new QuantumState { Dimension = "SEMANTIC", Amplitude = 0.7, Phase = 0.0 });
         states.Add(new QuantumState { Dimension = "SYNTACTIC", Amplitude = 0.5, Phase = Math.PI / 4 });
         states.Add(new QuantumState { Dimension = "PRAGMATIC", Amplitude = 0.6, Phase = Math.PI / 2 });
         states.Add(new QuantumState { Dimension = "CREATIVE", Amplitude = temperature, Phase = Math.PI });
-        
+
         return states;
     }
 
@@ -168,7 +173,7 @@ public class QuantumModelAccess
         // This would use advanced probability calculations to select optimal result
         var bestResult = "";
         var maxCoherence = 0.0;
-        
+
         foreach (var result in results)
         {
             var coherence = CalculateQuantumCoherence(result, originalPrompt);
@@ -178,7 +183,7 @@ public class QuantumModelAccess
                 bestResult = result;
             }
         }
-        
+
         return bestResult;
     }
 
@@ -186,10 +191,10 @@ public class QuantumModelAccess
     {
         // Advanced coherence calculation using quantum information theory
         // This is a simplified version - real implementation would use density matrices
-        return result.Length > 0 ? Math.Random.Shared.NextDouble() : 0.0;
+        return result.Length > 0 ? new Random().NextDouble() : 0.0;
     }
 
-    public static void FillModelInfo(object obj, out SqlString name, out SqlInt64 parameterCount, 
+    public static void FillModelInfo(object obj, out SqlString name, out SqlInt64 parameterCount,
         out SqlString status, out SqlString capabilities, out SqlString errorMessage)
     {
         var info = (ModelInfo)obj;
@@ -222,46 +227,46 @@ public class MemoryMappedModel
     private readonly long _parameterCount;
     private readonly MemoryMappedFile _mmf;
     private readonly MemoryMappedViewAccessor _accessor;
-    
+
     public MemoryMappedModel(string filePath, long parameterCount)
     {
         _filePath = filePath;
         _parameterCount = parameterCount;
-        
+
         // Create memory-mapped file for efficient access
         var fileInfo = new FileInfo(filePath);
         _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, "model", fileInfo.Length);
         _accessor = _mmf.CreateViewAccessor(0, fileInfo.Length);
     }
-    
+
     public string InferenceAtState(QuantumState state, int maxTokens)
     {
         // Perform inference at specific quantum state
         // This would interface with the actual model through memory mapping
         return $"Inference result at quantum state {state.Dimension} with amplitude {state.Amplitude}";
     }
-    
+
     public void ReplaceLayerWeights(string layerName, byte[] newWeights)
     {
         // Replace specific layer weights in memory-mapped model
         // This enables real-time model modification
     }
-    
+
     public void MergeLayerWeights(string layerName, byte[] weights)
     {
         // Merge weights with existing layer
     }
-    
+
     public void EvolveLayerWeights(string layerName, byte[] weights)
     {
         // Evolutionary weight modification
     }
-    
+
     public void QuantumEntangleWeights(string layerName, byte[] weights)
     {
         // Create quantum entanglement between weight matrices
     }
-    
+
     public IEnumerable<ParameterInfo> StreamParameters(long startIndex, long count)
     {
         for (long i = startIndex; i < startIndex + count && i < _parameterCount; i++)
@@ -277,25 +282,25 @@ public class MemoryMappedModel
             };
         }
     }
-    
+
     private double CalculateParameterSignificance(long index)
     {
         // Calculate parameter importance using information theory
-        return Math.Random.Shared.NextDouble();
+        return new Random().NextDouble();
     }
-    
+
     private string DetermineQuantumState(long index)
     {
         // Determine quantum superposition state of parameter
         var states = new[] { "UP", "DOWN", "SUPERPOSITION", "ENTANGLED" };
         return states[index % states.Length];
     }
-    
+
     public long GetMemoryFootprint()
     {
         return _parameterCount * 4; // 4 bytes per parameter (float32)
     }
-    
+
     public string GetCapabilities()
     {
         return "QUANTUM_INFERENCE,REAL_TIME_SURGERY,PARAMETER_STREAMING,WEIGHT_EVOLUTION";

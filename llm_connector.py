@@ -48,7 +48,9 @@ class GeminiClient(BaseLLMClient):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             self.api_key_missing = True
-            logging.warning("GEMINI_API_KEY environment variable not set - client will fail gracefully")
+            logging.warning(
+                "GEMINI_API_KEY environment variable not set - client will fail gracefully"
+            )
             return
         self.api_key_missing = False
         genai.configure(api_key=api_key)
@@ -79,7 +81,9 @@ class ClaudeClient(BaseLLMClient):
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             self.api_key_missing = True
-            logging.warning("ANTHROPIC_API_KEY environment variable not set - client will fail gracefully")
+            logging.warning(
+                "ANTHROPIC_API_KEY environment variable not set - client will fail gracefully"
+            )
             return
         self.api_key_missing = False
         self.client = anthropic.Anthropic(api_key=api_key)
@@ -108,7 +112,9 @@ class HuggingFaceClient(BaseLLMClient):
     def __init__(self):
         if not HUGGINGFACE_API_TOKEN:
             self.api_key_missing = True
-            logging.warning("HUGGINGFACE_API_TOKEN environment variable not set - client will fail gracefully")
+            logging.warning(
+                "HUGGINGFACE_API_TOKEN environment variable not set - client will fail gracefully"
+            )
             return
         self.api_key_missing = False
         self.client = InferenceClient(
@@ -188,12 +194,12 @@ class LLMClient:
         self.primary_client: BaseLLMClient = None
         self.fallback_clients = {}
         self.failed_clients = set()  # Track temporarily failed clients
-        
+
         logging.info(f"Initializing main LLMClient with source: {self.llm_source}")
-        
+
         # Initialize primary client
         self.primary_client = self._create_client(self.llm_source)
-        
+
         # Initialize fallback clients if enabled
         if LLM_FALLBACK_ENABLED:
             logging.info("Fallback enabled. Initializing fallback clients...")
@@ -202,13 +208,20 @@ class LLMClient:
                     try:
                         client = self._create_client(source)
                         # Only add client if it was initialized properly (has no API key issues)
-                        if not hasattr(client, 'api_key_missing') or not client.api_key_missing:
+                        if (
+                            not hasattr(client, "api_key_missing")
+                            or not client.api_key_missing
+                        ):
                             self.fallback_clients[source] = client
                             logging.info(f"Fallback client '{source}' initialized.")
                         else:
-                            logging.info(f"Fallback client '{source}' skipped due to missing API key.")
+                            logging.info(
+                                f"Fallback client '{source}' skipped due to missing API key."
+                            )
                     except Exception as e:
-                        logging.warning(f"Failed to initialize fallback client '{source}': {e}")
+                        logging.warning(
+                            f"Failed to initialize fallback client '{source}': {e}"
+                        )
 
     def _create_client(self, source: str) -> BaseLLMClient:
         """Create a client for the given source."""
@@ -261,39 +274,47 @@ class LLMClient:
         try:
             logging.info(f"Attempting primary client: {self.llm_source}")
             response = await self.primary_client.invoke(prompt, temperature, max_tokens)
-            
+
             # Reset failed clients on successful call
             if self.llm_source in self.failed_clients:
                 self.failed_clients.remove(self.llm_source)
                 logging.info(f"Primary client {self.llm_source} recovered.")
-                
+
             return response
-            
+
         except Exception as primary_error:
             logging.error(f"Primary client ({self.llm_source}) failed: {primary_error}")
-            
+
             # Check if we should try fallbacks
             if not LLM_FALLBACK_ENABLED:
                 return f"Error invoking LLM: {primary_error}"
-            
+
             # Mark primary as temporarily failed if it's a rate limit
             if self._is_rate_limit_error(primary_error):
                 self.failed_clients.add(self.llm_source)
-                logging.warning(f"Rate limit detected for {self.llm_source}, trying fallbacks...")
+                logging.warning(
+                    f"Rate limit detected for {self.llm_source}, trying fallbacks..."
+                )
             elif self._is_api_key_error(primary_error):
-                logging.warning(f"API key issue for {self.llm_source}, trying fallbacks...")
+                logging.warning(
+                    f"API key issue for {self.llm_source}, trying fallbacks..."
+                )
             else:
-                logging.warning(f"Unknown error for {self.llm_source}, trying fallbacks...")
+                logging.warning(
+                    f"Unknown error for {self.llm_source}, trying fallbacks..."
+                )
 
             # Try fallback clients
             for fallback_source in LLM_FALLBACK_ORDER:
                 if fallback_source == self.llm_source:
                     continue  # Skip primary
-                    
+
                 if fallback_source in self.failed_clients:
-                    logging.info(f"Skipping temporarily failed client: {fallback_source}")
+                    logging.info(
+                        f"Skipping temporarily failed client: {fallback_source}"
+                    )
                     continue
-                    
+
                 if fallback_source not in self.fallback_clients:
                     logging.warning(f"Fallback client {fallback_source} not available")
                     continue
@@ -304,16 +325,18 @@ class LLMClient:
                         prompt, temperature, max_tokens
                     )
                     logging.info(f"✅ Fallback client {fallback_source} succeeded!")
-                    
+
                     # Reset failed status for this client
                     if fallback_source in self.failed_clients:
                         self.failed_clients.remove(fallback_source)
-                        
+
                     return response
-                    
+
                 except Exception as fallback_error:
-                    logging.error(f"Fallback client {fallback_source} failed: {fallback_error}")
-                    
+                    logging.error(
+                        f"Fallback client {fallback_source} failed: {fallback_error}"
+                    )
+
                     # Mark fallback as failed if rate limit
                     if self._is_rate_limit_error(fallback_error):
                         self.failed_clients.add(fallback_source)
@@ -325,20 +348,32 @@ class LLMClient:
     def get_available_models(self) -> dict:
         """Get information about available models."""
         models = {}
-        
+
         # Add configured models
-        models["gemini"] = {"model": GEMINI_MODEL_NAME, "type": "cloud", "status": "gemini" not in self.failed_clients}
-        models["claude"] = {"model": CLAUDE_MODEL_NAME, "type": "cloud", "status": "claude" not in self.failed_clients}
-        models["llama"] = {"model": LLAMA_MODEL_NAME, "type": "cloud", "status": "llama" not in self.failed_clients}
-        
+        models["gemini"] = {
+            "model": GEMINI_MODEL_NAME,
+            "type": "cloud",
+            "status": "gemini" not in self.failed_clients,
+        }
+        models["claude"] = {
+            "model": CLAUDE_MODEL_NAME,
+            "type": "cloud",
+            "status": "claude" not in self.failed_clients,
+        }
+        models["llama"] = {
+            "model": LLAMA_MODEL_NAME,
+            "type": "cloud",
+            "status": "llama" not in self.failed_clients,
+        }
+
         # Add Ollama models
         models["ollama"] = {
             "model": OLLAMA_MODEL_NAME,
             "type": "local",
             "status": "ollama" not in self.failed_clients,
-            "available_models": OLLAMA_MODELS
+            "available_models": OLLAMA_MODELS,
         }
-        
+
         return models
 
     def reset_failed_clients(self):

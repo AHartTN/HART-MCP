@@ -126,7 +126,7 @@ class OrchestratorAgent:
 
         for step in range(10):  # Max 10 steps for the cognitive loop
             system_prompt = AGENT_CONSTITUTION
-            persona_details = f"You are {self.name}, an AI orchestrator agent with the role of {self.role}. Your primary goal is to break down complex missions and delegate sub-tasks to specialist agents using the available tools. You must always respond with a JSON object containing a 'thought' and an 'action'. The 'action' must contain a 'tool' and a 'query'.\n"
+            persona_details = f"You are {self.name}, an AI orchestrator agent with the role of {self.role}. Your primary goal is to break down complex missions and delegate sub-tasks to specialist agents using the available tools. You must always respond with a JSON object containing a 'thought' and an 'action'. The 'action' must contain a 'tool_name' and 'parameters'.\n"
             system_prompt = persona_details + system_prompt
             available_tools = ", ".join(self.tool_registry.get_tool_names())
             scratchpad_content = "\n".join(self.scratchpad)
@@ -137,8 +137,9 @@ Overall Mission: {mission_prompt}
 Available Tools: {available_tools}
 Scratchpad History:
 {scratchpad_content}
-Your next response MUST be a JSON object with two keys: 'thought' (string) and 'action' (object). The 'action' object MUST have two keys: 'tool_name' (string, name of the tool to use) and 'parameters' (object, a dictionary of named parameters for the tool). If you have completed the mission, use the 'FinishTool' and provide the final answer as the 'response' parameter.
-Example: {{'thought': 'I need to delegate this task to a specialist.', 'action': {{'tool_name': 'DelegateToSpecialistTool', 'parameters': {{'mission_prompt': 'sub-task for specialist'}}}}}} """
+Your next response MUST be a JSON object with two keys: 'thought' (string) and 'action' (object). The 'action' object MUST have two keys: 'tool_name' (string, name of the tool to use) and 'parameters' (object, a dictionary of named parameters for the tool). If you have completed the mission, use tool_name 'finish' and provide the final answer as the 'response' parameter.
+Example: {{'thought': 'I need to delegate this task to a specialist.', 'action': {{'tool_name': 'delegate_to_specialist', 'parameters': {{'mission_prompt': 'sub-task for specialist'}}}}}}
+Finish example: {{'thought': 'Mission completed successfully.', 'action': {{'tool_name': 'finish', 'parameters': {{'response': 'The mission was successful.'}}}}}} """
             logger.info("LLM Prompt for step %s:\n%s", step, llm_prompt)
 
             if self.update_callback:
@@ -181,10 +182,10 @@ Example: {{'thought': 'I need to delegate this task to a specialist.', 'action':
                         }
                     )
 
-                if tool_name == "DelegateToSpecialistTool":
+                if tool_name == "delegate_to_specialist":
                     parameters_for_tool["log_id"] = log_id
 
-                if tool_name == "FinishTool":
+                if tool_name == "finish":
                     final_answer = parameters_for_tool.get("response")
                     self.scratchpad.append(f"Final Answer: {final_answer}")
                     if self.update_callback:

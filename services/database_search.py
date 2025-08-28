@@ -129,7 +129,7 @@ async def search_sql_server_async(
     query_embedding: List[float], sql_server_conn=None
 ) -> List[Dict[str, Any]]:
     """Asynchronously search SQL Server."""
-    # Note: sql_server_conn parameter is ignored since sql_connection_context() 
+    # Note: sql_server_conn parameter is ignored since sql_connection_context()
     # handles connection management internally
     try:
         async with sql_connection_context() as (

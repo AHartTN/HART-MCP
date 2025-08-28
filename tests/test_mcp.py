@@ -20,9 +20,9 @@ async def test_mcp_golden_path(
     # This simulates the agent thinking and deciding to finish the mission.
     final_answer = "The mission was a success."
     mock_llm_client.response = (
-        '''{"thought": "I have the final answer.", "action": {"tool": "FinishTool", "query": "'''
+        '''{"thought": "I have the final answer.", "action": {"tool_name": "finish", "parameters": {"response": "'''
         + final_answer
-        + """"}}"""
+        + """"}}}"""
     )
 
     # Mock LLMClient instantiation within run_agent_mission
@@ -33,6 +33,13 @@ async def test_mcp_golden_path(
     # Act: Call the MCP endpoint with a mission.
     mission_payload = {"query": "Test mission", "agent_id": 1}
     response = client.post("/mcp", json=mission_payload)
+
+    # Debug: Print response details if there's an error
+    if response.status_code != 200:
+        print(f"Response status: {response.status_code}")
+        print(f"Response headers: {response.headers}")
+        print(f"Response content: {response.text}")
+
     response.raise_for_status()
     mission_id = response.json()["mission_id"]
 
