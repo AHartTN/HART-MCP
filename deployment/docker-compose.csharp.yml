@@ -1,0 +1,74 @@
+version: '3.8'
+
+networks:
+  hart-csharp-network:
+    driver: bridge
+
+volumes:
+  hart_csharp_logs:
+
+services:
+  # Enterprise C# HART-MCP Application
+  hart-csharp:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.csharp
+    container_name: hart-mcp-csharp
+    env_file:
+      - ../.env
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__SqlServer=Data Source=${SQL_SERVER_SERVER};Initial Catalog=${SQL_SERVER_DATABASE};Integrated Security=false;User ID=${SQL_SERVER_USERNAME};Password=${SQL_SERVER_PASSWORD};TrustServerCertificate=true
+      - ConnectionStrings__Neo4j=${NEO4J_URI}
+      - Database__CommandTimeoutSeconds=30
+      - Database__MaxPoolSize=100
+      - Database__MinPoolSize=5
+      - AI__DefaultProvider=Gemini
+      - AI__Gemini__ApiKey=${GEMINI_API_KEY}
+      - AI__Gemini__Model=gemini-pro
+      - Logging__LogLevel__Default=Information
+      - Logging__LogLevel__HART.MCP=Debug
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    volumes:
+      - hart_csharp_logs:/app/logs
+    networks:
+      - hart-csharp-network
+    restart: unless-stopped
+    # No dependencies - connects to your standalone database instances
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Note: All databases run as standalone instances on 192.168.1.2:
+  # - SQL Server 2025 (with SQL CLR): 192.168.1.2:1433 (HART-MCP database)  
+  # - Neo4j: 192.168.1.2:7687
+  # Uses your existing .env configuration
+  # Redis caching disabled - using in-memory cache instead
+
+  # Optional: Nginx reverse proxy for production
+  nginx:
+    image: nginx:alpine
+    container_name: hart-nginx-csharp
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx-csharp.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - hart-csharp
+    networks:
+      - hart-csharp-network
+    restart: unless-stopped
+    profiles:
+      - production
+
+  # Note: Using your standalone SQL Server 2025 instance
+  # SQL CLR quantum models require SQL Server 2025 features
+  # Connection via host.docker.internal to your Windows SQL Server instance

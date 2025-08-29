@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "hart-mcp": {
+      "command": "dotnet",
+      "args": ["run", "--project", "src/HART.MCP.CLI"],
+      "cwd": "E:\\Repositories\\Github\\HART-MCP",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Production"
+      }
+    }
+  }
+}

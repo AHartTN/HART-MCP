@@ -1,0 +1,46 @@
+version: '3.8'
+
+networks:
+  hart-python-network:
+    driver: bridge
+
+volumes:
+  hart_python_logs:
+
+services:
+  # Python Legacy HART-MCP Application
+  hart-python:
+    build:
+      context: ../legacy-python
+      dockerfile: Dockerfile.python
+    container_name: hart-mcp-python
+    env_file:
+      - ../.env
+    environment:
+      - LLM_SOURCE=${LLM_SOURCE:-gemini}
+    ports:
+      - "8000:8000"
+    volumes:
+      - hart_python_logs:/app/logs
+      - ../legacy-python/uploads:/app/uploads
+      - ../legacy-python/static:/app/static:ro
+    networks:
+      - hart-python-network
+    restart: unless-stopped
+    # No dependencies - connects to your standalone database instances
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Note: SQL Server should be running on your host machine
+  # The Python system will connect to host.docker.internal for SQL Server
+  # No containerized SQL Server - using your standalone SQL Server 2025 instance
+
+  # Note: All databases run as standalone instances on 192.168.1.2:
+  # - SQL Server 2025 (with SQL CLR): 192.168.1.2:1433 (HART-MCP database)
+  # - Milvus: 192.168.1.2:19530 (rag_collection)
+  # - Neo4j: 192.168.1.2:7687
+  # Uses your existing .env configuration

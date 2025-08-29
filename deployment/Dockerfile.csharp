@@ -1,0 +1,55 @@
+# Enterprise C# System Multi-stage Dockerfile
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+WORKDIR /app
+EXPOSE 8080
+EXPOSE 8081
+
+# Create non-root user for security
+RUN adduser --disabled-password --gecos '' appuser && chown -R appuser /app
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+ARG BUILD_CONFIGURATION=Release
+WORKDIR /src
+
+# Copy project files for dependency restoration
+COPY ["src/HART.MCP.API/HART.MCP.API.csproj", "src/HART.MCP.API/"]
+COPY ["src/HART.MCP.Application/HART.MCP.Application.csproj", "src/HART.MCP.Application/"]
+COPY ["src/HART.MCP.Infrastructure/HART.MCP.Infrastructure.csproj", "src/HART.MCP.Infrastructure/"]
+COPY ["src/HART.MCP.Domain/HART.MCP.Domain.csproj", "src/HART.MCP.Domain/"]
+COPY ["src/HART.MCP.Shared/HART.MCP.Shared.csproj", "src/HART.MCP.Shared/"]
+COPY ["src/HART.MCP.AI/HART.MCP.AI.csproj", "src/HART.MCP.AI/"]
+COPY ["src/HART.MCP.SqlClr/HART.MCP.SqlClr.csproj", "src/HART.MCP.SqlClr/"]
+
+# Restore dependencies with retry for network issues
+RUN dotnet restore "src/HART.MCP.API/HART.MCP.API.csproj" --verbosity minimal
+
+# Copy source code
+COPY . .
+
+# Build and publish application
+WORKDIR "/src/src/HART.MCP.API"
+RUN dotnet build "HART.MCP.API.csproj" -c $BUILD_CONFIGURATION -o /app/build --no-restore
+RUN dotnet publish "HART.MCP.API.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false --no-restore
+
+FROM base AS final
+WORKDIR /app
+
+# Install curl for health checks
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+# Copy published application
+COPY --from=build /app/publish .
+
+# Create logs directory and set permissions
+RUN mkdir -p /app/logs && \
+    chown -R appuser:appuser /app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+USER appuser
+ENTRYPOINT ["dotnet", "HART.MCP.API.dll"]

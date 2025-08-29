@@ -208,3 +208,20 @@ __marimo__/
 
 # Gemini CLI specific files
 .gemini/
+**/bin/
+**/obj/
+[General IDE/build/OS artifacts]
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+bin/
+obj/
+TestResults/
+*.log
+*.db
+*.sqlite
+*.pdb
+*.DS_Store
+Thumbs.db
